@@ -1,127 +1,243 @@
-@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* =========================
-   Base styles
+   Design Tokens
+========================= */
+:root {
+  --bg:           oklch(0.16 0.025 250);
+  --bg-2:         oklch(0.19 0.028 250);
+  --panel:        oklch(0.22 0.03 250);
+  --panel-2:      oklch(0.25 0.032 250);
+  --card:         oklch(0.27 0.035 250);
+  --line:         oklch(0.34 0.04 250);
+  --line-2:       oklch(0.42 0.05 250);
+  --ink:          oklch(0.98 0.005 250);
+  --ink-2:        oklch(0.82 0.02 250);
+  --ink-3:        oklch(0.62 0.03 250);
+  --ink-4:        oklch(0.48 0.03 250);
+  --cyan:         oklch(0.82 0.14 205);
+  --cyan-soft:    oklch(0.55 0.12 205);
+  --coral:        oklch(0.74 0.16 22);
+  --coral-soft:   oklch(0.52 0.14 22);
+  --mint:         oklch(0.80 0.16 160);
+  --mint-soft:    oklch(0.55 0.14 160);
+  --amber:        oklch(0.80 0.15 70);
+  --amber-soft:   oklch(0.58 0.14 70);
+  --orchid:       oklch(0.74 0.18 305);
+  --orchid-soft:  oklch(0.54 0.16 305);
+  --gold:         oklch(0.83 0.15 88);
+  --radius-sm: 8px;
+  --radius:    12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --shadow-card: 0 1px 0 oklch(1 0 0 / 0.05) inset, 0 12px 30px -12px oklch(0 0 0 / 0.55);
+  --shadow-pop: 0 30px 80px -30px oklch(0 0 0 / 0.8), 0 10px 25px -10px oklch(0 0 0 / 0.5);
+}
+
+/* =========================
+   Base
 ========================= */
 @layer base {
-  html {
-    scroll-behavior: smooth;
-  }
+  html { scroll-behavior: smooth; background: var(--bg); }
 
   * {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  input:focus,
-  textarea:focus,
-  select:focus {
-    outline: none;
-  }
+  input:focus, textarea:focus, select:focus { outline: none; }
 
-  /* CRITICAL: Ensure Leaflet map stays below modals */
-  .leaflet-pane,
-  .leaflet-map-pane,
-  .leaflet-control {
-    z-index: 0 !important;
-  }
+  /* Leaflet z-index */
+  .leaflet-pane, .leaflet-map-pane, .leaflet-control { z-index: 0 !important; }
+  .leaflet-top, .leaflet-bottom { z-index: 1 !important; }
+  .leaflet-popup-pane { z-index: 2 !important; }
 
-  .leaflet-top,
-  .leaflet-bottom {
-    z-index: 1 !important;
+  /* Leaflet control redesign */
+  .leaflet-control-zoom { border: none !important; margin: 14px !important; }
+  .leaflet-control-zoom a {
+    background: oklch(0.22 0.03 250 / 0.92) !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line) !important;
+    width: 34px !important; height: 34px !important; line-height: 32px !important;
+    border-radius: 10px !important; margin-bottom: 6px !important;
+    backdrop-filter: blur(6px);
   }
+  .leaflet-control-zoom a:hover { background: oklch(0.28 0.04 250 / 0.95) !important; }
+  .leaflet-control-attribution {
+    background: oklch(0.18 0.03 250 / 0.8) !important;
+    color: var(--ink-3) !important;
+    font-size: 10px !important;
+    border-top-left-radius: 8px;
+  }
+  .leaflet-control-attribution a { color: var(--cyan-soft) !important; }
+  .leaflet-container { background: oklch(0.13 0.02 250) !important; }
 
-  .leaflet-popup-pane {
-    z-index: 2 !important;
-  }
-
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.3);
-    border-radius: 3px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.5);
-  }
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: oklch(0.32 0.03 250); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(0.40 0.03 250); }
 }
 
 /* =========================
    Components
 ========================= */
 @layer components {
+
   .glass {
-    @apply bg-white/[0.06] backdrop-blur-xl border border-white/[0.08] shadow-glass;
+    background: oklch(0.22 0.03 250 / 0.75);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--line);
   }
-
-  .glass-hover {
-    @apply transition-all duration-300;
+  .glass-dark {
+    background: oklch(0.19 0.028 250 / 0.88);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--line);
   }
-
-  .glass-hover:hover {
-    @apply bg-white/[0.1] border-white/[0.15];
-  }
-
   .glass-card {
-    @apply glass glass-hover rounded-2xl;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    transition: transform 150ms ease, border-color 150ms ease;
   }
+  .glass-card:hover { border-color: var(--line-2); transform: translateY(-1px); }
 
   .text-gradient {
-    @apply bg-gradient-to-r from-ocean-300 via-ocean-400 to-coral-400 bg-clip-text text-transparent;
+    background: linear-gradient(135deg, var(--cyan), oklch(0.65 0.12 235));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
-
-  .text-gradient-subtle {
-    @apply bg-gradient-to-r from-ocean-400 to-ocean-500 bg-clip-text text-transparent;
+  .text-gradient-warm {
+    background: linear-gradient(135deg, var(--coral), var(--amber));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
   .btn-primary {
-    @apply px-5 py-2.5 rounded-xl bg-gradient-to-r from-ocean-500 to-ocean-600
-      text-white font-body font-semibold text-sm tracking-tight shadow-glow
-      transition-all duration-300;
+    @apply px-5 py-2.5 rounded-xl font-semibold text-sm tracking-tight
+      transition-all duration-200 active:scale-[0.97]
+      disabled:opacity-40 disabled:cursor-not-allowed;
+    background: linear-gradient(180deg, oklch(0.45 0.10 205), oklch(0.36 0.08 205));
+    border: 1px solid oklch(0.55 0.12 205);
+    color: var(--cyan);
+    box-shadow: 0 8px 20px -8px oklch(0.55 0.12 205 / 0.6);
   }
-
-  .btn-primary:hover {
-    @apply shadow-lg from-ocean-400 to-ocean-500;
-  }
-
-  .btn-primary:active {
-    @apply scale-[0.97];
-  }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 
   .btn-ghost {
-    @apply px-4 py-2 rounded-lg text-slate-300 font-body text-sm
-      transition-all duration-200;
+    @apply px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200;
+    color: var(--ink-3);
   }
+  .btn-ghost:hover { color: var(--ink); background: oklch(0.27 0.035 250); }
 
-  .btn-ghost:hover {
-    @apply text-white bg-white/[0.08];
+  .btn-danger {
+    @apply px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200;
+    color: var(--coral);
   }
+  .btn-danger:hover { color: oklch(0.82 0.14 22); background: oklch(0.28 0.08 22 / 0.2); }
 
   .input-glass {
-    @apply w-full bg-white/[0.06] border border-white/[0.1] rounded-xl
-      px-4 py-2.5 text-white placeholder-slate-500 font-body text-sm
-      transition-all duration-300;
+    @apply w-full rounded-xl px-4 py-2.5 text-sm transition-all duration-200;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--ink);
   }
-
+  .input-glass::placeholder { color: var(--ink-3); }
   .input-glass:focus {
-    @apply border-ocean-500 bg-white/[0.1] shadow-glow;
+    border-color: var(--cyan-soft);
+    box-shadow: 0 0 0 3px oklch(0.55 0.12 205 / 0.15);
   }
 
   .badge {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1
-      rounded-full text-xs font-semibold;
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+
+  .section-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .divider { border-top: 1px solid var(--line); }
+
+  .skeleton {
+    border-radius: var(--radius-sm);
+    animation: shimmer 1.8s infinite linear;
+    background-size: 200% 100%;
+    background-image: linear-gradient(
+      90deg,
+      oklch(0.24 0.03 250) 0%,
+      oklch(0.32 0.04 250) 50%,
+      oklch(0.24 0.03 250) 100%
+    );
+  }
+
+  .stat-pill {
+    @apply flex flex-col items-center justify-center gap-0.5;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+
+  .xp-bar {
+    height: 6px; border-radius: 99px;
+    background: oklch(0.20 0.03 250);
+    overflow: hidden;
+  }
+  .xp-bar-fill {
+    height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--cyan), oklch(0.55 0.12 200));
+    transition: width 700ms ease;
+    box-shadow: 0 0 10px oklch(0.55 0.12 205 / 0.5);
+  }
+
+  .poi-icon {
+    @apply w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0;
+  }
+
+  .right-panel {
+    background: linear-gradient(180deg, var(--bg-2), var(--bg));
+    border-left: 1px solid var(--line);
+    @apply flex flex-col overflow-hidden;
+  }
+
+  /* Map POI markers — CSS class based, no inline styles */
+  .poi-marker-dot {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 4px 10px -2px oklch(0 0 0 / 0.6), 0 0 0 1px oklch(0 0 0 / 0.3);
+    position: relative;
+  }
+  .poi-marker-dot.restaurant { background: linear-gradient(180deg, oklch(0.7 0.18 22), oklch(0.55 0.16 22)); }
+  .poi-marker-dot.cafe       { background: linear-gradient(180deg, oklch(0.75 0.16 60), oklch(0.6 0.14 60)); }
+  .poi-marker-dot.attraction { background: linear-gradient(180deg, oklch(0.7 0.18 295), oklch(0.55 0.16 295)); }
+  .poi-marker-dot.park       { background: linear-gradient(180deg, oklch(0.75 0.16 160), oklch(0.55 0.14 160)); }
+  .poi-marker-dot.museum     { background: linear-gradient(180deg, oklch(0.75 0.14 205), oklch(0.55 0.12 205)); }
+  .poi-marker-dot.visited    { opacity: 0.5; }
+  .poi-marker-dot.visited::after {
+    content: ""; position: absolute; right: -3px; top: -3px;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--mint); border: 2px solid oklch(0.16 0.025 250);
+  }
+
+  /* Planner numbered markers */
+  .planner-marker-dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--cyan), oklch(0.55 0.12 200));
+    border: 2.5px solid white;
+    box-shadow: 0 4px 12px oklch(0.55 0.12 205 / 0.5);
+    display: grid; place-items: center;
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700; font-size: 13px; color: white;
   }
 }
 
@@ -129,9 +245,49 @@
    Utilities
 ========================= */
 @layer utilities {
-  .stagger-1 { animation-delay: 0.05s; }
-  .stagger-2 { animation-delay: 0.1s; }
-  .stagger-3 { animation-delay: 0.15s; }
-  .stagger-4 { animation-delay: 0.2s; }
-  .stagger-5 { animation-delay: 0.25s; }
+  .stagger-1 { animation-delay: 0.04s; }
+  .stagger-2 { animation-delay: 0.08s; }
+  .stagger-3 { animation-delay: 0.12s; }
+  .stagger-4 { animation-delay: 0.16s; }
+  .stagger-5 { animation-delay: 0.20s; }
+
+  .shadow-glow-sm { box-shadow: 0 0 12px oklch(0.55 0.12 205 / 0.4); }
+  .shadow-glow-lg { box-shadow: 0 0 28px oklch(0.55 0.12 205 / 0.6); }
+  .shadow-glow    { box-shadow: 0 0 20px oklch(0.55 0.12 205 / 0.5); }
+}
+
+/* =========================
+   Keyframes
+========================= */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-8px); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes pulse {
+  0%   { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(1.8); opacity: 0; }
 }

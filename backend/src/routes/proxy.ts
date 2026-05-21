@@ -1,320 +1,300 @@
 import { Router, Request, Response } from "express";
-import { getCache, setCache, CACHE_TTL, getGridCacheKey } from "../services/cache";
+import {
+  getCache, setCache, CACHE_TTL, getGridCacheKey,
+  acquireLock, releaseLock, trackMiss, getCacheTTL,
+} from "../services/cache";
 import crypto from "crypto";
 
 const router = Router();
 
-const OVERPASS_URL = process.env.OVERPASS_URL || "https://overpass-api.de/api";
+const OVERPASS_URL  = process.env.OVERPASS_URL  || "https://overpass-api.de/api";
 const NOMINATIM_URL = process.env.NOMINATIM_URL || "https://nominatim.openstreetmap.org";
+const API_TIMEOUT   = 30_000;
+const MAX_ATTEMPTS  = 2;
+const RETRY_DELAY_MS = 2_000;
 
-// Increase timeout for slow APIs (60 seconds)
-const API_TIMEOUT = 60000;
+// If a cached entry has less than this many seconds left, refresh it in the background
+// while still serving the stale value immediately.
+const STALE_REFRESH_THRESHOLD = 600; // 10 minutes
 
-/**
- * Generate cache key with prefix
- */
+// How long to wait for a lock-holding peer to populate the cache before giving up
+// and fetching ourselves.
+const LOCK_WAIT_MAX_MS      = 10_000;
+const LOCK_WAIT_INTERVAL_MS = 300;
+
 function getCacheKey(prefix: string, ...parts: string[]): string {
-  return `wayvora:${prefix}:${parts.join(':')}`;
+  return `wandrmark:${prefix}:${parts.join(":")}`;
 }
 
-// POST /proxy/overpass - Proxy requests to Overpass API with smart caching
-router.post("/overpass", async (req: Request, res: Response) => {
-  try {
-    const { query } = req.body;
+interface FetchSpec {
+  url: string;
+  method?: "GET" | "POST";
+  headers?: Record<string, string>;
+  body?: string;
+}
 
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({ error: "Query string is required" });
-    }
-
-    // Extract coordinates, radius, and categories from query for grid-based caching
-    const cacheKey = extractGridCacheKey(query);
-
-    // If we can't extract grid info, fall back to hash-based caching
-    const fallbackHash = crypto.createHash('md5').update(query).digest('hex');
-    const finalCacheKey = cacheKey || getCacheKey('overpass', fallbackHash);
-
-    const cachedData = await getCache(finalCacheKey);
-
-    if (cachedData) {
-      console.log('[CACHE HIT] Overpass query:', finalCacheKey);
-      return res.json(cachedData);
-    }
-
-    console.log('[CACHE MISS] Overpass query - fetching from API:', finalCacheKey);
-    const url = `${OVERPASS_URL}/interpreter`;
-
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Wayvora/1.0"
-        },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      // If rate limited or error, try to return stale cache if available
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[PROXY] Overpass API error ${response.status}:`, errorText);
-
-        // Try to get ANY cached data for this location (even if expired)
-        // This is a fallback to avoid 429/504 errors when APIs are overloaded
-        const staleCacheData = await getCache(finalCacheKey);
-        if (staleCacheData) {
-          console.log('[STALE CACHE] Returning stale cache due to API error');
-          return res.json(staleCacheData);
-        }
-
-        return res.status(response.status).json({
-          error: `Overpass API error: ${response.status}`,
-          details: errorText.substring(0, 200)
-        });
-      }
-
-      const data = await response.json();
-
-      // Only cache if we got meaningful results
-      const hasResults = data.elements && Array.isArray(data.elements) && data.elements.length > 0;
-
-      if (hasResults) {
-        console.log(`[CACHE] Storing ${data.elements.length} POIs for key ${finalCacheKey}`);
-        await setCache(finalCacheKey, data, CACHE_TTL.OVERPASS);
-      } else {
-        console.log(`[NO CACHE] Empty result for query - not caching`);
-      }
-
-      return res.json(data);
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-
-      // On any fetch error, try to return cached data
-      const staleCacheData = await getCache(finalCacheKey);
-      if (staleCacheData) {
-        console.log('[STALE CACHE] Returning stale cache due to fetch error');
-        return res.json(staleCacheData);
-      }
-
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.error('[PROXY] Overpass request timeout');
-        return res.status(504).json({
-          error: 'Overpass API timeout. The query took too long to execute. Try a smaller search area or fewer categories.'
-        });
-      }
-      throw fetchError;
-    }
-  } catch (err) {
-    console.error("[PROXY] Overpass error:", err);
-    const message = err instanceof Error ? err.message : "Proxy error";
-    return res.status(503).json({
-      error: `Overpass API unavailable: ${message}`,
-      suggestion: 'The Overpass API may be overloaded. Please try again in a moment.'
-    });
-  }
-});
+// ─── Core fetch helpers ───────────────────────────────────────────────────────
 
 /**
- * Extract grid cache key from Overpass query
- * Parses the query to get coordinates, radius, and categories
+ * Run the HTTP fetch with retry. Stores the result in Redis when successful.
  */
+async function doFetch(
+  cacheKey: string,
+  spec: FetchSpec,
+  hasResults: (data: any) => boolean,
+  ttl: number,
+  timeoutMessage: string
+): Promise<{ data: any; httpStatus?: number; error?: string }> {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), API_TIMEOUT);
+
+    try {
+      const response = await fetch(spec.url, {
+        method: spec.method ?? "GET",
+        headers: spec.headers,
+        body: spec.body,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        if (response.status >= 500 && attempt < MAX_ATTEMPTS - 1) continue;
+        const stale = await getCache(cacheKey);
+        if (stale) return { data: stale };
+        const errorText = await response.text();
+        return { data: null, httpStatus: response.status, error: errorText.substring(0, 200) };
+      }
+
+      const data = await response.json() as any;
+      if (hasResults(data)) await setCache(cacheKey, data, ttl);
+      return { data };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === "AbortError") {
+        if (attempt < MAX_ATTEMPTS - 1) continue;
+        const stale = await getCache(cacheKey);
+        if (stale) return { data: stale };
+        return { data: null, httpStatus: 504, error: timeoutMessage };
+      }
+      throw err;
+    }
+  }
+
+  return { data: null, httpStatus: 503, error: "Unexpected error" };
+}
+
+/**
+ * Poll Redis until the key appears or the deadline passes.
+ * Used by requests that lost the stampede lock — they wait for the winner to fill the cache.
+ */
+async function pollForCache(key: string): Promise<any | null> {
+  const deadline = Date.now() + LOCK_WAIT_MAX_MS;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, LOCK_WAIT_INTERVAL_MS));
+    const cached = await getCache(key);
+    if (cached) return cached;
+  }
+  return null;
+}
+
+/**
+ * Fire-and-forget background refresh when a cached entry is close to expiry.
+ * Acquires its own lock so only one refresh runs at a time per key.
+ */
+function refreshInBackground(
+  cacheKey: string,
+  spec: FetchSpec,
+  hasResults: (data: any) => boolean,
+  ttl: number,
+  timeoutMessage: string
+): void {
+  (async () => {
+    const gotLock = await acquireLock(`${cacheKey}:bg`, 35);
+    if (!gotLock) return;
+    try {
+      await doFetch(cacheKey, spec, hasResults, ttl, timeoutMessage);
+    } finally {
+      await releaseLock(`${cacheKey}:bg`);
+    }
+  })().catch(() => {});
+}
+
+/**
+ * Main cache orchestrator:
+ *   1. Serve from cache (+ trigger background refresh if TTL is low)
+ *   2. Track misses
+ *   3. Stampede protection — only one request fetches, others wait
+ *   4. Fetch from upstream and cache the result
+ */
+async function fetchWithCache(
+  cacheKey: string,
+  spec: FetchSpec,
+  hasResults: (data: any) => boolean,
+  ttl: number,
+  timeoutMessage: string
+): Promise<{ data: any; httpStatus?: number; error?: string }> {
+
+  // 1. Cache hit path
+  const cached = await getCache(cacheKey);
+  if (cached) {
+    const remaining = await getCacheTTL(cacheKey);
+    if (remaining > 0 && remaining < STALE_REFRESH_THRESHOLD) {
+      refreshInBackground(cacheKey, spec, hasResults, ttl, timeoutMessage);
+    }
+    return { data: cached };
+  }
+
+  // 2. Track the miss (fire-and-forget)
+  trackMiss(cacheKey).catch(() => {});
+
+  // 3. Stampede protection
+  const gotLock = await acquireLock(cacheKey, 35);
+  if (!gotLock) {
+    const fromPeer = await pollForCache(cacheKey);
+    if (fromPeer) return { data: fromPeer };
+    // Peer timed out — fall through and fetch ourselves
+  }
+
+  // Check cache once more in case we waited and a peer filled it
+  if (gotLock) {
+    const doubleCheck = await getCache(cacheKey);
+    if (doubleCheck) {
+      await releaseLock(cacheKey);
+      return { data: doubleCheck };
+    }
+  }
+
+  try {
+    return await doFetch(cacheKey, spec, hasResults, ttl, timeoutMessage);
+  } finally {
+    if (gotLock) await releaseLock(cacheKey);
+  }
+}
+
+// ─── Route helpers ────────────────────────────────────────────────────────────
+
+function setCacheHeaders(res: Response, ttl: number): void {
+  // max-age matches Redis TTL; stale-while-revalidate gives browsers/CDNs extra time
+  // to serve stale content while a background revalidation occurs.
+  res.set("Cache-Control", `public, max-age=${ttl}, stale-while-revalidate=${ttl * 8}`);
+}
+
 function extractGridCacheKey(query: string): string | null {
   try {
-    // Match radius, lat, lng with optional spaces
-    const aroundMatch = query.match(/around:\s*(\d+)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
-    if (!aroundMatch) return null;
+    const m = query.match(/around:\s*(\d+)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+    if (!m) return null;
 
-    const radius = Number(aroundMatch[1]);
-    const lat = Number(aroundMatch[2]);
-    const lng = Number(aroundMatch[3]);
+    const radius = Number(m[1]);
+    const lat    = Number(m[2]);
+    const lng    = Number(m[3]);
 
     const categories: string[] = [];
-    if (/node\[\s*"amenity"\s*=\s*"restaurant"\s*\]/.test(query)) categories.push('restaurant');
-    if (/node\[\s*"amenity"\s*=\s*"cafe"\s*\]/.test(query)) categories.push('cafe');
-    if (/node\[\s*"tourism"\s*=\s*"museum"\s*\]/.test(query) || /way\[\s*"tourism"\s*=\s*"museum"\s*\]/.test(query)) categories.push('museum');
-    if (/node\[\s*"leisure"\s*=\s*"park"\s*\]/.test(query) || /way\[\s*"leisure"\s*=\s*"park"\s*\]/.test(query)) categories.push('park');
-    if (/node\[\s*"tourism"\s*=\s*"attraction"\s*\]/.test(query) || /node\[\s*"tourism"\s*=\s*"viewpoint"\s*\]/.test(query)) categories.push('attraction');
-
+    if (/node\["amenity"="restaurant"\]/.test(query))                        categories.push("restaurant");
+    if (/node\["amenity"="cafe"\]/.test(query))                              categories.push("cafe");
+    if (/node\["tourism"="museum"\]|way\["tourism"="museum"\]/.test(query))  categories.push("museum");
+    if (/node\["leisure"="park"\]|way\["leisure"="park"\]/.test(query))      categories.push("park");
+    if (/node\["tourism"="attraction"\]|node\["tourism"="viewpoint"\]|node\["tourism"="artwork"\]|node\["historic"|node\["amenity"="theatre"\]/.test(query)) categories.push("attraction");
     categories.sort();
 
     return getGridCacheKey(lat, lng, radius, categories);
-  } catch (err) {
-    console.error('[CACHE] Error extracting grid key:', err);
+  } catch {
     return null;
   }
 }
 
-// GET /proxy/nominatim/search - Proxy requests to Nominatim API with smart caching
-router.get("/nominatim/search", async (req: Request, res: Response) => {
+// ─── Routes ───────────────────────────────────────────────────────────────────
+
+// POST /proxy/overpass
+router.post("/overpass", async (req: Request, res: Response) => {
   try {
-    const queryParams = new URLSearchParams(req.query as Record<string, string>);
-    const paramsString = queryParams.toString();
-
-    // Check cache first
-    const cacheKey = getCacheKey('nominatim', 'search', paramsString);
-    const cachedData = await getCache(cacheKey);
-
-    if (cachedData) {
-      console.log('[CACHE HIT] Nominatim search:', paramsString.substring(0, 50));
-      return res.json(cachedData);
+    const { query } = req.body;
+    if (!query || typeof query !== "string") {
+      return res.status(400).json({ error: "Query string is required" });
     }
 
-    console.log('[CACHE MISS] Nominatim search - fetching from API:', paramsString.substring(0, 50));
-    const url = `${NOMINATIM_URL}/search?${paramsString}`;
+    const fallbackHash = crypto.createHash("md5").update(query).digest("hex");
+    const cacheKey = extractGridCacheKey(query) || getCacheKey("overpass", fallbackHash);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
+    const result = await fetchWithCache(
+      cacheKey,
+      {
+        url: `${OVERPASS_URL}/interpreter`,
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Wandrmark/1.0" },
+        body: `data=${encodeURIComponent(query)}`,
+      },
+      (d) => Array.isArray(d.elements) && d.elements.length > 0,
+      CACHE_TTL.OVERPASS,
+      "Overpass API timeout. Try a smaller search area or fewer categories."
+    );
 
-    try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Wayvora/1.0",
-          "Accept": "application/json",
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      // If error, try to return stale cache
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[PROXY] Nominatim search error ${response.status}:`, errorText);
-
-        // Try stale cache
-        const staleCacheData = await getCache(cacheKey);
-        if (staleCacheData) {
-          console.log('[STALE CACHE] Returning stale cache due to API error');
-          return res.json(staleCacheData);
-        }
-
-        return res.status(response.status).json({
-          error: `Nominatim API error: ${response.status}`
-        });
-      }
-
-      const data = await response.json();
-
-      // Only cache if we got results
-      const hasResults = Array.isArray(data) && data.length > 0;
-
-      if (hasResults) {
-        console.log(`[CACHE] Storing ${data.length} Nominatim results`);
-        await setCache(cacheKey, data, CACHE_TTL.NOMINATIM);
-      } else {
-        console.log('[NO CACHE] Empty Nominatim result - not caching');
-      }
-
-      return res.json(data);
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-
-      // Try stale cache on fetch error
-      const staleCacheData = await getCache(cacheKey);
-      if (staleCacheData) {
-        console.log('[STALE CACHE] Returning stale cache due to fetch error');
-        return res.json(staleCacheData);
-      }
-
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        return res.status(504).json({ error: 'Nominatim search timeout' });
-      }
-      throw fetchError;
+    if (result.data) {
+      setCacheHeaders(res, CACHE_TTL.OVERPASS);
+      return res.json(result.data);
     }
+    return res.status(result.httpStatus ?? 503).json({ error: result.error ?? "Overpass API error" });
   } catch (err) {
-    console.error("[PROXY] Nominatim search error:", err);
-    const message = err instanceof Error ? err.message : "Proxy error";
-    return res.status(503).json({ error: `Nominatim API unavailable: ${message}` });
+    console.error("[PROXY] Overpass error:", err);
+    return res.status(503).json({ error: "Overpass API unavailable" });
   }
 });
 
-// GET /proxy/nominatim/reverse - Proxy reverse geocoding requests with caching
+// GET /proxy/nominatim/search
+router.get("/nominatim/search", async (req: Request, res: Response) => {
+  try {
+    const paramsString = new URLSearchParams(req.query as Record<string, string>).toString();
+    const cacheKey = getCacheKey("nominatim", "search", paramsString);
+
+    const result = await fetchWithCache(
+      cacheKey,
+      {
+        url: `${NOMINATIM_URL}/search?${paramsString}`,
+        headers: { "User-Agent": "Wandrmark/1.0", Accept: "application/json" },
+      },
+      (d) => Array.isArray(d) && d.length > 0,
+      CACHE_TTL.NOMINATIM,
+      "Nominatim search timeout"
+    );
+
+    if (result.data) {
+      setCacheHeaders(res, CACHE_TTL.NOMINATIM);
+      return res.json(result.data);
+    }
+    return res.status(result.httpStatus ?? 503).json({ error: result.error ?? "Nominatim search error" });
+  } catch (err) {
+    console.error("[PROXY] Nominatim search error:", err);
+    return res.status(503).json({ error: "Nominatim API unavailable" });
+  }
+});
+
+// GET /proxy/nominatim/reverse
 router.get("/nominatim/reverse", async (req: Request, res: Response) => {
   try {
-    const queryParams = new URLSearchParams(req.query as Record<string, string>);
-    const paramsString = queryParams.toString();
+    const paramsString = new URLSearchParams(req.query as Record<string, string>).toString();
+    const cacheKey = getCacheKey("nominatim", "reverse", paramsString);
 
-    // Check cache first
-    const cacheKey = getCacheKey('nominatim', 'reverse', paramsString);
-    const cachedData = await getCache(cacheKey);
+    const result = await fetchWithCache(
+      cacheKey,
+      {
+        url: `${NOMINATIM_URL}/reverse?${paramsString}`,
+        headers: { "User-Agent": "Wandrmark/1.0", Accept: "application/json" },
+      },
+      (d) => d && (d.display_name || d.address),
+      CACHE_TTL.NOMINATIM,
+      "Nominatim reverse timeout"
+    );
 
-    if (cachedData) {
-      console.log('[CACHE HIT] Nominatim reverse:', paramsString.substring(0, 50));
-      return res.json(cachedData);
+    if (result.data) {
+      setCacheHeaders(res, CACHE_TTL.NOMINATIM);
+      return res.json(result.data);
     }
-
-    console.log('[CACHE MISS] Nominatim reverse - fetching from API:', paramsString.substring(0, 50));
-    const url = `${NOMINATIM_URL}/reverse?${paramsString}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-
-    try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Wayvora/1.0",
-          "Accept": "application/json",
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      // If error, try stale cache
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[PROXY] Nominatim reverse error ${response.status}:`, errorText);
-
-        // Try stale cache
-        const staleCacheData = await getCache(cacheKey);
-        if (staleCacheData) {
-          console.log('[STALE CACHE] Returning stale cache due to API error');
-          return res.json(staleCacheData);
-        }
-
-        return res.status(response.status).json({
-          error: `Nominatim API error: ${response.status}`
-        });
-      }
-
-      const data = await response.json();
-
-      // Only cache if we got a valid result (has display_name or address)
-      const hasResults = data && (data.display_name || data.address);
-
-      if (hasResults) {
-        console.log('[CACHE] Storing Nominatim reverse result');
-        await setCache(cacheKey, data, CACHE_TTL.NOMINATIM);
-      } else {
-        console.log('[NO CACHE] Empty/invalid Nominatim reverse result - not caching');
-      }
-
-      return res.json(data);
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-
-      // Try stale cache on fetch error
-      const staleCacheData = await getCache(cacheKey);
-      if (staleCacheData) {
-        console.log('[STALE CACHE] Returning stale cache due to fetch error');
-        return res.json(staleCacheData);
-      }
-
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        return res.status(504).json({ error: 'Nominatim reverse timeout' });
-      }
-      throw fetchError;
-    }
+    return res.status(result.httpStatus ?? 503).json({ error: result.error ?? "Nominatim reverse error" });
   } catch (err) {
     console.error("[PROXY] Nominatim reverse error:", err);
-    const message = err instanceof Error ? err.message : "Proxy error";
-    return res.status(503).json({ error: `Nominatim API unavailable: ${message}` });
+    return res.status(503).json({ error: "Nominatim API unavailable" });
   }
 });
 

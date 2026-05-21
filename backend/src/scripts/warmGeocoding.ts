@@ -35,7 +35,7 @@ async function geocodeCity(cityQuery: string): Promise<GeocodedCity | null> {
 
     const response = await fetch(`${NOMINATIM_URL}/search?${params}`, {
       headers: {
-        'User-Agent': 'Wayvora-GeocodeWarmer/1.0',
+        'User-Agent': 'Wandrmark-GeocodeWarmer/1.0',
         'Accept': 'application/json',
       },
     });
@@ -44,7 +44,7 @@ async function geocodeCity(cityQuery: string): Promise<GeocodedCity | null> {
       throw new Error(`Nominatim error ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
 
     if (!data || data.length === 0) {
       return null;
@@ -71,7 +71,7 @@ async function geocodeCity(cityQuery: string): Promise<GeocodedCity | null> {
 function getGeocodeCacheKey(query: string): string {
   const normalizedQuery = query.trim().toLowerCase();
   // Match the exact format frontend sends: limit=5 and includes extratags=1
-  return `wayvora:nominatim:search:q=${normalizedQuery}&format=json&limit=5&addressdetails=1&extratags=1`;
+  return `wandrmark:nominatim:search:q=${normalizedQuery}&format=json&limit=5&addressdetails=1&extratags=1`;
 }
 
 /**

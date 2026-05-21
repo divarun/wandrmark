@@ -1,4 +1,5 @@
 // Gamification type definitions
+import type { LatLng, POI, POICategory, RouteSegment } from "./index";
 
 export interface ExplorerPassport {
   userId: string;
@@ -263,5 +264,5 @@ export interface YearInReview {
   generatedAt: Date;
 }
 
-// Re-export existing types
-export type { POI, POICategory, LatLng, RouteSegment } from "./index";
+// Re-export for convenience
+export type { POI, POICategory, LatLng, RouteSegment };

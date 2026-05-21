@@ -1,5 +1,5 @@
 import { Router, Response, Request } from "express";
-import { generateRecommendations, generateTravelTips, generateNeighborhoodFact, generateCitySummary, generateHistoricalContext } from "../services/ollama";
+import { generateRecommendations, generateTravelTips, generateNeighborhoodFact, generateCitySummary, generateHistoricalContext, generateCityInsights } from "../services/nim";
 import { getCache, setCache, CACHE_TTL, CacheKeys } from "../services/cache";
 
 const router = Router();
@@ -7,17 +7,17 @@ const router = Router();
 // POST /ai/recommendations — no auth required, with caching
 router.post("/recommendations", async (req: Request, res: Response) => {
   try {
-    const { selectedPois, userPreferences } = req.body;
+    const { selectedPois, userPreferences, mood } = req.body;
 
     if (!Array.isArray(selectedPois) || selectedPois.length === 0) {
       res.status(400).json({ error: "selectedPois array with at least one item is required." });
       return;
     }
 
-    // Generate cache key from POIs and preferences
+    // Generate cache key from POIs, preferences, and mood
     const cacheKey = CacheKeys.aiRecommendations(
       JSON.stringify(selectedPois),
-      userPreferences || ''
+      `${userPreferences || ''}:${mood || ''}`
     );
 
     // Check cache
@@ -28,7 +28,7 @@ router.post("/recommendations", async (req: Request, res: Response) => {
     }
 
     console.log('[CACHE MISS] AI recommendations - generating');
-    const recommendations = await generateRecommendations(selectedPois, userPreferences);
+    const recommendations = await generateRecommendations(selectedPois, userPreferences, mood);
 
     // Cache the recommendations
     await setCache(cacheKey, recommendations, CACHE_TTL.AI_RECOMMENDATIONS);
@@ -37,7 +37,7 @@ router.post("/recommendations", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[AI] Recommendations error:", err);
     const message = err instanceof Error ? err.message : "AI service error.";
-    res.status(503).json({ error: `AI service unavailable: ${message}. Make sure Ollama is running.` });
+    res.status(503).json({ error: `AI service unavailable: ${message}. Check your NVIDIA_API_KEY.` });
   }
 });
 
@@ -52,7 +52,7 @@ router.post("/travel-tips", async (req: Request, res: Response) => {
     }
 
     // Generate cache key
-    const cacheKey = CacheKeys.aiTips(poi.name, poi.category || 'attraction');
+    const cacheKey = CacheKeys.aiTips(poi.name, poi.category || 'attraction', poi.address || '');
 
     // Check cache
     const cachedTips = await getCache(cacheKey);
@@ -71,7 +71,7 @@ router.post("/travel-tips", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[AI] Travel tips error:", err);
     const message = err instanceof Error ? err.message : "AI service error.";
-    res.status(503).json({ error: `AI service unavailable: ${message}. Make sure Ollama is running.` });
+    res.status(503).json({ error: `AI service unavailable: ${message}. Check your NVIDIA_API_KEY.` });
   }
 });
 
@@ -141,14 +141,24 @@ router.post("/city-summary", async (req: Request, res: Response) => {
       });
     }
 
+    const cacheKey = CacheKeys.aiCitySummary(cityName, neighborhoodsVisited);
+    const cachedSummary = await getCache<string>(cacheKey);
+    if (cachedSummary) {
+      console.log('[CACHE HIT] AI city summary');
+      return res.json({ summary: cachedSummary, cityName, neighborhoodsVisited: neighborhoodsVisited.length, poisVisited, generatedAt: new Date().toISOString(), cached: true });
+    }
+
+    console.log('[CACHE MISS] AI city summary - generating');
     const summary = await generateCitySummary(cityName, neighborhoodsVisited, poisVisited);
+    await setCache(cacheKey, summary, CACHE_TTL.AI_CITY_SUMMARY);
 
     res.json({
       summary,
       cityName,
       neighborhoodsVisited: neighborhoodsVisited.length,
       poisVisited,
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      cached: false,
     });
   } catch (error) {
     console.error("Error generating city summary:", error);
@@ -173,12 +183,22 @@ router.post("/historical-context", async (req: Request, res: Response) => {
       });
     }
 
+    const cacheKey = CacheKeys.aiHistoricalContext(name, category, address);
+    const cachedContext = await getCache<string>(cacheKey);
+    if (cachedContext) {
+      console.log('[CACHE HIT] AI historical context');
+      return res.json({ context: cachedContext, poi: { name, category, address }, generatedAt: new Date().toISOString(), cached: true });
+    }
+
+    console.log('[CACHE MISS] AI historical context - generating');
     const context = await generateHistoricalContext({ name, category, address });
+    await setCache(cacheKey, context, CACHE_TTL.AI_HISTORICAL);
 
     res.json({
       context,
       poi: { name, category, address },
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      cached: false,
     });
   } catch (error) {
     console.error("Error generating historical context:", error);
@@ -186,6 +206,38 @@ router.post("/historical-context", async (req: Request, res: Response) => {
       error: "Failed to generate historical context",
       fallback: `${req.body.name} is a notable ${req.body.category} in this area.`
     });
+  }
+});
+
+/**
+ * POST /ai/city-insights
+ * Generate rich travel insights for a city (cached 7 days, pre-warmed by cron)
+ */
+router.post("/city-insights", async (req: Request, res: Response) => {
+  try {
+    const { cityName } = req.body;
+
+    if (!cityName || typeof cityName !== "string" || !cityName.trim()) {
+      res.status(400).json({ error: "cityName (string) is required." });
+      return;
+    }
+
+    const cacheKey = CacheKeys.aiCityInsights(cityName);
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      console.log(`[CACHE HIT] AI city insights: ${cityName}`);
+      return res.json({ ...cached, cached: true });
+    }
+
+    console.log(`[CACHE MISS] AI city insights - generating: ${cityName}`);
+    const insights = await generateCityInsights(cityName.split(",")[0].trim());
+    await setCache(cacheKey, insights, CACHE_TTL.AI_CITY_INSIGHTS);
+
+    res.json({ ...insights, cached: false });
+  } catch (err) {
+    console.error("[AI] City insights error:", err);
+    const message = err instanceof Error ? err.message : "AI service error.";
+    res.status(503).json({ error: `AI service unavailable: ${message}. Check your NVIDIA_API_KEY.` });
   }
 });
 

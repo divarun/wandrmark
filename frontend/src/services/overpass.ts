@@ -10,39 +10,36 @@ const BASE_URL =
 export async function fetchPOIs(
   center: LatLng,
   radiusMeters: number = 1500,
-  categories: POICategory[] = ["restaurant", "cafe", "museum", "park", "attraction"]
+  categories: POICategory[] = ["restaurant", "cafe", "museum", "park", "attraction"],
+  signal?: AbortSignal
 ): Promise<POI[]> {
   const safeRadius = Math.min(radiusMeters, 1500);
 
-  try {
-    const response = await fetch(`${BASE_URL}/proxy/overpass`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: buildOptimizedQuery(center, safeRadius, categories),
-      }),
-    });
+  const response = await fetch(`${BASE_URL}/proxy/overpass`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: buildOptimizedQuery(center, safeRadius, categories),
+    }),
+    signal,
+  });
 
-    if (!response.ok) {
-      console.error(`❌ Overpass proxy error ${response.status}`);
-      return [];
-    }
-
-    const data = await response.json();
-
-    if (!data.elements?.length) {
-      console.log("📭 No POIs found");
-      return [];
-    }
-
-    return data.elements
-      .map(mapElementToPOI)
-      .filter((p): p is POI => p !== null)
-      .slice(0, 30);
-  } catch (err) {
-    console.error("❌ Fetch error:", err);
-    return [];
+  if (!response.ok) {
+    throw new Error(
+      response.status === 504
+        ? "Location data timed out — try a smaller area or check back shortly."
+        : `Could not load nearby places (${response.status}).`
+    );
   }
+
+  const data = await response.json();
+
+  if (!data.elements?.length) return [];
+
+  return data.elements
+    .map(mapElementToPOI)
+    .filter((p: POI | null): p is POI => p !== null)
+    .slice(0, 60);
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,6 +72,15 @@ function buildOptimizedQuery(
       case "attraction":
         queries.push(`node["tourism"="attraction"](around:${radius},${center.lat},${center.lng});`);
         queries.push(`node["tourism"="viewpoint"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["tourism"="artwork"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["tourism"="gallery"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["historic"="monument"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["historic"="memorial"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["historic"="castle"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`way["historic"="castle"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["historic"="ruins"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["amenity"="theatre"](around:${radius},${center.lat},${center.lng});`);
+        queries.push(`node["amenity"="arts_centre"](around:${radius},${center.lat},${center.lng});`);
         break;
     }
   });
@@ -84,9 +90,7 @@ function buildOptimizedQuery(
 (
   ${queries.join("\n  ")}
 );
-out body center 30;
->;
-out skel qt;
+out body center 60;
   `.trim();
 }
 
@@ -116,8 +120,18 @@ function mapElementToPOI(el: any): POI | null {
   else if (tags.amenity === "cafe") category = "cafe";
   else if (tags.tourism === "museum") category = "museum";
   else if (tags.leisure === "park") category = "park";
-  else if (tags.tourism === "attraction" || tags.tourism === "viewpoint")
-    category = "attraction";
+  else if (
+    tags.tourism === "attraction" ||
+    tags.tourism === "viewpoint" ||
+    tags.tourism === "artwork" ||
+    tags.tourism === "gallery" ||
+    tags.historic === "monument" ||
+    tags.historic === "memorial" ||
+    tags.historic === "castle" ||
+    tags.historic === "ruins" ||
+    tags.amenity === "theatre" ||
+    tags.amenity === "arts_centre"
+  ) category = "attraction";
 
   const addressParts: string[] = [];
   if (tags["addr:housenumber"] && tags["addr:street"]) {

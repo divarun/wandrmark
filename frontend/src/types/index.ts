@@ -65,18 +65,6 @@ export interface AITravelTip {
   localInsights: string;
 }
 
-export interface User {
-  id: string;
-  email: string;
-  createdAt: string;
-}
-
-export interface AuthState {
-  user: User | null;
-  token: string | null;
-  isLoading: boolean;
-}
-
 export interface AppSettings {
   defaultCenter: LatLng;
   defaultZoom: number;

@@ -1,12 +1,14 @@
-# Wayvora - Complete Developer Guide
+# Wandrmark - Complete Developer Guide
 
 ## Overview
 
-**Wayvora** is a travel exploration app that combines POI discovery with gamification. Users can explore places near them, plan multi-stop routes, and earn rewards through the "Explorer Passport" system.
+**Wandrmark** is a travel exploration app that combines POI discovery with gamification. Users can explore places near them, plan multi-stop routes, and earn rewards through the "Explorer Passport" system.
+
+**No auth. No database. No login.** All user state lives in `localStorage`.
 
 ### Tech Stack
 - **Frontend**: Next.js 14, TypeScript, Tailwind, Leaflet maps
-- **Backend**: Express.js, PostgreSQL, Redis, Ollama AI
+- **Backend**: Express.js, Redis (optional — caching only), NVIDIA NIM AI
 - **APIs**: Overpass (POIs), Nominatim (geocoding), OSRM (routing)
 
 ---
@@ -20,7 +22,7 @@
    ├─ Sets default center: NYC (40.7128, -74.0060)
    └─ Initializes state (mode=explorer, pois=[], plannerPois=[])
 
-2. useEffect runs (line 37-63)
+2. useEffect runs
    ├─ Checks browser geolocation
    ├─ Success: setMapCenter(user's location)
    └─ Failure: Use default NYC location
@@ -31,8 +33,8 @@
 
 4. Frontend → POST /api/proxy/overpass
    ├─ Backend checks Redis cache
-   ├─ Miss: Query Overpass API  
-   ├─ Save to Redis (TTL: 6hrs)
+   ├─ Miss: Query Overpass API
+   ├─ Save to Redis (TTL: 1hr)
    └─ Return POI data
 
 5. Frontend maps OSM elements → POI objects
@@ -46,8 +48,25 @@
    └─ Loading indicator disappears
 
 7. PassportPanel initializes
-   ├─ Load from localStorage: wayvora_user_progress
+   ├─ Load from localStorage: wandrmark_user_progress
    └─ If none: Create new progress (level 1, 0 XP)
+```
+
+### Backend Cache Warmer Startup
+
+```
+index.ts calls startCacheWarmer() if Redis is healthy
+  ↓
+checkInsightsEmpty() — checks if "New York" has AI insights cached
+  ├─ Empty → warmTopCities() fires immediately (background)
+  │    Step 1/3: Nominatim geocoding for all cities
+  │    Step 2/3: Overpass POI fetch for all cities
+  │    Step 3/3: NVIDIA NIM AI insights for all cities
+  └─ Populated → skip, next run Sunday midnight UTC
+
+Weekly cron: 0 0 * * 0 (Sunday midnight)
+  └─ warmTopCities() — refreshes all caches
+       AI insights auto-skip if TTL > 1 day (7-day cache)
 ```
 
 ---
@@ -62,7 +81,7 @@ handleSearch()
   └─ geocodeSearch("Paris", 5)
       ↓
 GET /api/proxy/nominatim/search?q=Paris&limit=5
-  ├─ Backend checks Redis
+  ├─ Backend checks Redis (TTL: 24hrs)
   ├─ Miss: Query Nominatim API
   └─ Return 5 results
       ↓
@@ -73,15 +92,22 @@ Dropdown appears with cities
       ↓
 User clicks "Paris, France"
   ↓
-onSearchResult(48.8566, 2.3522)
-  ├─ setMapCenter({lat: 48.8566, lng: 2.3522})
-  ├─ load(newCenter) → Fetch Paris POIs
-  └─ Map animates to Paris
+onSearchResult(48.8566, 2.3522)     ← map & POIs update
+setInsightCityName("Paris, France") ← triggers city insights fetch
+  ↓
+POST /api/ai/city-insights { cityName: "Paris, France" }
+  ├─ Backend checks Redis (TTL: 7 days, pre-warmed by cron)
+  ├─ Hit: Return instantly
+  └─ Miss: Generate via NVIDIA NIM → cache → return
       ↓
-Result: Map shows Paris with new POIs
+ExplorerSidebar shows city insights card (above POI list):
+  ├─ Overview paragraph
+  ├─ Highlight chips (landmarks, experiences)
+  ├─ 🏛️ Historical fact
+  └─ 💡 Local tip
 ```
 
-**Key Detail:** `load()` is called IMMEDIATELY when city is selected, before map finishes animating. This prevents users waiting for map animation to finish before seeing POIs.
+**Key Detail:** `load()` is called immediately when a city is selected, before the map finishes animating. City insights fetch runs in parallel.
 
 ---
 
@@ -180,7 +206,7 @@ Sidebar shows summary:
 - Start at level 1 (Tourist)
 - Earn 10 XP per new POI
 - Formula: `xpToNextLevel = 100 * 1.5^(level-1)`
-- Titles: Tourist → Wanderer → Explorer → ... → Legend
+- Titles: Tourist → Traveler → Explorer → Local Guide → City Expert → Legend
 
 **2. Stamps**
 - Earned when visiting new neighborhood
@@ -205,7 +231,7 @@ Sidebar shows summary:
 
 All data in **localStorage**:
 ```javascript
-wayvora_user_progress: {
+wandrmark_user_progress: {
   passport: {
     stamps: [],
     badges: [],
@@ -216,7 +242,7 @@ wayvora_user_progress: {
   achievements: [],
   mysteryBoxes: []
 }
-wayvora_visited_pois: ["poi-id-1", "poi-id-2", ...]
+wandrmark_visited_pois: ["poi-id-1", "poi-id-2", ...]
 ```
 
 ---
@@ -238,13 +264,15 @@ wayvora_visited_pois: ["poi-id-1", "poi-id-2", ...]
 │ ┌────────┐  ┌──────────┐  ┌──────┐  ┌──────────┐  │
 │ │Explorer│  │ WayvMap  │  │Plan  │  │Passport  │  │
 │ │Sidebar │  │(Leaflet) │  │Sidebar│ │Panel     │  │
-│ └────────┘  └──────────┘  └──────┘  └──────────┘  │
+│ │+Insights│ └──────────┘  └──────┘  └──────────┘  │
+│ └────────┘                                          │
 │                                                     │
 │  ┌──────────────────── Services ─────────────────┐ │
 │  │ • overpass.ts  - Fetch POIs                  │ │
 │  │ • nominatim.ts - Geocoding                   │ │
 │  │ • routing.ts   - OSRM routes                 │ │
 │  │ • gamification - Passport system             │ │
+│  │ • api.ts       - Backend AI calls            │ │
 │  └──────────────────────────────────────────────┘ │
 └─────────────┬───────────────────────────────────────┘
               │
@@ -252,23 +280,32 @@ wayvora_visited_pois: ["poi-id-1", "poi-id-2", ...]
 ┌─────────────────────────────────────────────────────┐
 │                   BACKEND                           │
 │  ┌──────────────────── Routes ──────────────────┐  │
-│  │ • /api/proxy/overpass   - POI proxy         │  │
-│  │ • /api/proxy/nominatim  - Geocoding proxy   │  │
-│  │ • /api/ai/recommend     - AI suggestions    │  │
-│  │ • /api/auth/*           - Authentication    │  │
-│  └────────────────────────────────────────────── ┘  │
+│  │ • /api/proxy/overpass      - POI proxy       │  │
+│  │ • /api/proxy/nominatim     - Geocoding proxy │  │
+│  │ • /api/ai/recommendations  - AI suggestions  │  │
+│  │ • /api/ai/travel-tips      - POI tips        │  │
+│  │ • /api/ai/city-insights    - City facts/hist │  │
+│  │ • /api/ai/neighborhood-fact - Stamp facts    │  │
+│  │ • /api/ai/historical-context - POI history   │  │
+│  │ • /api/ai/city-summary     - Trip summary    │  │
+│  └──────────────────────────────────────────────┘  │
 │                                                     │
 │  ┌──────────────── Services ────────────────────┐  │
-│  │ • cache.ts  - Redis caching                  │  │
-│  │ • ollama.ts - AI integration                 │  │
+│  │ • cache.ts - Redis caching                   │  │
+│  │ • nim.ts   - NVIDIA NIM AI integration       │  │
 │  └──────────────────────────────────────────────┘  │
-└──────┬──────────┬──────────┬────────────────────────┘
-       │          │          │
-       ▼          ▼          ▼
-   ┌─────┐   ┌─────┐   ┌──────┐
-   │Postgr│   │Redis│   │Ollama│
-   │SQL   │   │     │   │ AI   │
-   └─────┘   └─────┘   └──────┘
+│                                                     │
+│  ┌──────────────── Scheduler ───────────────────┐  │
+│  │ • Startup: warm cache if empty               │  │
+│  │ • Weekly: Sunday midnight UTC (cron)         │  │
+│  └──────────────────────────────────────────────┘  │
+└──────┬──────────────────────────────────────────────┘
+       │          │
+       ▼          ▼
+   ┌─────┐   ┌──────────────┐
+   │Redis│   │NVIDIA NIM    │
+   │     │   │(cloud API)   │
+   └─────┘   └──────────────┘
 ```
 
 ---
@@ -306,9 +343,16 @@ wayvora_visited_pois: ["poi-id-1", "poi-id-2", ...]
 ### ExplorerSidebar
 **Features:**
 - City search with geocoding dropdown
+- **City insights card** (shown after city search): overview, highlights, historical fact, local tip — collapsible, shown above POI list
 - POI list (filtered by categories)
 - Favorite button (♥)
 - Add to planner (+)
+
+**City insights flow:**
+- Triggered when user selects a geocode result
+- Calls `POST /api/ai/city-insights` with the city name
+- Shows skeleton while loading, collapses via toggle
+- Served from Redis cache (7-day TTL, pre-warmed by cron)
 
 ### PlannerSidebar
 **Features:**
@@ -326,13 +370,71 @@ wayvora_visited_pois: ["poi-id-1", "poi-id-2", ...]
 
 ---
 
+## API Reference
+
+### AI Endpoints (`/api/ai/*`)
+
+| Endpoint | Input | Cache TTL | Description |
+|---|---|---|---|
+| `POST /recommendations` | `selectedPois[]`, `userPreferences?`, `mood?` | 30 min | 3-5 nearby place suggestions |
+| `POST /travel-tips` | `poi` | 1 hr | Description, tips, local insights for a POI |
+| `POST /city-insights` | `cityName` | **7 days** | Overview, highlights, history, local tip for a city |
+| `POST /neighborhood-fact` | `neighborhood`, `city` | 7 days | Engaging fact for stamp collection |
+| `POST /historical-context` | `name`, `category`, `address` | 7 days | 2-3 sentence historical background for a POI |
+| `POST /city-summary` | `cityName`, `neighborhoodsVisited[]`, `poisVisited` | 1 hr | Personalized trip summary |
+
+### Proxy Endpoints (`/api/proxy/*`)
+
+| Endpoint | Cache TTL | Description |
+|---|---|---|
+| `POST /overpass` | 1 hr | POI data via grid-based spatial cache keys |
+| `GET /nominatim/search` | 24 hrs | Forward geocoding |
+| `GET /nominatim/reverse` | 24 hrs | Reverse geocoding |
+
+### Cache Warming (`/api/cache/*`)
+
+| Endpoint | Description |
+|---|---|
+| `GET /health` | Redis + NIM status |
+| `POST /warm` | Trigger manual cache warm |
+| `DELETE /clear` | Flush all cache keys |
+
+---
+
+## Cache Warming
+
+The cache warmer runs in 3 steps for all cities in `backend/src/data/cities.ts` (~200 cities):
+
+```
+Step 1/3: Nominatim geocoding
+  • Rate: 1 req/sec (Nominatim limit)
+  • TTL: 24 hours
+  • Skip if TTL > 12 hours
+
+Step 2/3: Overpass POI fetch
+  • Rate: 1 req/5 sec
+  • TTL: ~2 weeks (OVERPASS_TTL × 14)
+  • Sorted by cache miss count (most-missed first)
+
+Step 3/3: NVIDIA NIM AI city insights
+  • Rate: 1 req/500ms
+  • TTL: 7 days
+  • Skip automatically if TTL > 1 day
+```
+
+**Scheduling:**
+- **On startup**: runs immediately if AI insights cache is empty (Redis key for "New York" not found)
+- **Weekly cron**: every Sunday at 00:00 UTC — refreshes expired entries
+
+---
+
 ## API Flows
 
 ### POI Loading
 ```
 Frontend → POST /api/proxy/overpass
   ↓
-Backend checks Redis: overpass:{hash}
+Backend checks Redis: overpass:grid:{lat}:{lng}:{radius}:{categories}
   ├─ Hit: Return cached
   └─ Miss:
       ↓
@@ -341,18 +443,38 @@ Backend checks Redis: overpass:{hash}
       ↓
   Overpass returns OSM elements
       ↓
-  Save to Redis (TTL: 6hrs)
+  Save to Redis (TTL: ~2 weeks for pre-warmed, 1hr for live)
       ↓
   Return to frontend
       ↓
 Frontend maps elements to POI objects
 ```
 
+### City Insights
+```
+User selects city from geocode dropdown
+  ↓
+Frontend → POST /api/ai/city-insights { cityName: "Paris, France" }
+  ↓
+Backend normalizes: "Paris, France" → "paris" (cache key)
+  ↓
+Check Redis: wandrmark:ai:city-insights:paris
+  ├─ Hit: Return { overview, highlights, historicalFact, localTip, cached: true }
+  └─ Miss:
+      ↓
+  NVIDIA NIM prompt: "Provide travel insights for: Paris..."
+  JSON response parsed → fallback on parse error
+      ↓
+  Save to Redis (TTL: 7 days)
+      ↓
+  Return { ...insights, cached: false }
+```
+
 ### Geocoding
 ```
 Frontend → GET /api/proxy/nominatim/search?q=Paris
   ↓
-Backend checks Redis: nominatim:search:Paris:5
+Backend checks Redis
   ├─ Hit: Return cached
   └─ Miss:
       ↓
@@ -384,7 +506,7 @@ Frontend converts [lng,lat] → {lat,lng}
 **1. Add type:**
 ```typescript
 // types/index.ts
-export type POICategory = "restaurant" | "cafe" | "attraction" | 
+export type POICategory = "restaurant" | "cafe" | "attraction" |
                           "park" | "museum" | "hotel";
 ```
 
@@ -439,7 +561,14 @@ Done! Hotels now appear everywhere.
 **Common fixes:**
 - Reduce radius (1000 instead of 1500)
 - Restart Redis: `docker compose restart redis`
-- Clear cache: `docker exec -it wayvora-redis redis-cli FLUSHALL`
+- Clear cache: `docker exec -it wandrmark-redis redis-cli FLUSHALL`
+
+### City Insights Not Showing
+**Check:**
+1. Only appears after searching and selecting a city from the geocode dropdown
+2. Requires `NVIDIA_API_KEY` to be set (otherwise silently fails)
+3. Network tab: `POST /api/ai/city-insights`
+4. Backend logs: `[CACHE HIT]` or `[CACHE MISS]` for city insights
 
 ### Map Not Appearing
 **Check:**
@@ -449,7 +578,7 @@ Done! Hotels now appear everywhere.
 
 ### Passport Not Saving
 **Check:**
-1. localStorage available: `localStorage.getItem('wayvora_user_progress')`
+1. localStorage available: `localStorage.getItem('wandrmark_user_progress')`
 2. Quota not exceeded
 3. saveProgress() is called (add console.log)
 
@@ -489,53 +618,54 @@ const markerCache = useRef(new Map());
 ## Project Structure
 
 ```
-wayvora/
+wandrmark/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── page.tsx          # Main app component
-│   │   │   └── layout.tsx        # Root layout
+│   │   │   ├── page.tsx              # Main app component
+│   │   │   └── layout.tsx            # Root layout
 │   │   ├── components/
 │   │   │   ├── Navbar.tsx
-│   │   │   ├── ExplorerSidebar.tsx
+│   │   │   ├── ExplorerSidebar.tsx   # POI list + city search + insights
 │   │   │   ├── PlannerSidebar.tsx
-│   │   │   ├── WayvMap.tsx       # Leaflet map
-│   │   │   ├── PassportPanel.tsx # Gamification UI
+│   │   │   ├── WayvMap.tsx           # Leaflet map
+│   │   │   ├── PassportPanel.tsx     # Gamification UI
 │   │   │   ├── POIDetailCard.tsx
+│   │   │   ├── AIRecommendPanel.tsx
 │   │   │   └── CategoryFilter.tsx
 │   │   ├── hooks/
-│   │   │   ├── usePOIs.ts        # POI state management
-│   │   │   ├── useFavorites.ts   # Favorites localStorage
-│   │   │   └── useAuth.tsx       # Authentication
+│   │   │   ├── usePOIs.ts            # POI state management
+│   │   │   └── useFavorites.ts       # Favorites localStorage
 │   │   ├── services/
-│   │   │   ├── overpass.ts       # POI fetching
-│   │   │   ├── nominatim.ts      # Geocoding
-│   │   │   ├── routing.ts        # OSRM routing
-│   │   │   ├── gamification.ts   # Passport system
-│   │   │   └── api.ts            # Backend calls
+│   │   │   ├── overpass.ts           # POI fetching
+│   │   │   ├── nominatim.ts          # Geocoding
+│   │   │   ├── routing.ts            # OSRM routing
+│   │   │   ├── gamification.ts       # Passport system
+│   │   │   └── api.ts                # Backend AI calls (incl. city insights)
 │   │   ├── types/
-│   │   │   ├── index.ts          # Main types
-│   │   │   └── gamification.ts   # Passport types
+│   │   │   ├── index.ts              # Main types
+│   │   │   └── gamification.ts       # Passport types
 │   │   └── utils/
-│   │       └── constants.ts      # Category configs
+│   │       └── constants.ts          # Category configs
 │   └── package.json
 ├── backend/
 │   ├── src/
 │   │   ├── routes/
-│   │   │   ├── proxy.ts          # API proxies
-│   │   │   ├── ai.ts             # AI recommendations
-│   │   │   ├── auth.ts           # Authentication
-│   │   │   ├── favorites.ts      # Favorites CRUD
-│   │   │   └── itineraries.ts    # Routes CRUD
+│   │   │   ├── proxy.ts              # API proxies (Overpass + Nominatim)
+│   │   │   ├── ai.ts                 # All AI endpoints incl. city-insights
+│   │   │   └── cache.ts              # Cache management endpoints
 │   │   ├── services/
-│   │   │   ├── cache.ts          # Redis wrapper
-│   │   │   └── ollama.ts         # AI integration
-│   │   └── index.ts              # Express server
+│   │   │   ├── cache.ts              # Redis wrapper + CacheKeys + TTLs
+│   │   │   └── nim.ts                # NVIDIA NIM AI integration
+│   │   ├── scripts/
+│   │   │   ├── warmCache.ts          # Cache warming orchestrator (3 steps)
+│   │   │   └── warmGeocoding.ts      # Nominatim geocoding warmer
+│   │   ├── data/
+│   │   │   └── cities.ts             # ~200 major cities list
+│   │   ├── scheduler.ts              # Cron (weekly) + startup empty-check
+│   │   └── index.ts                  # Express server
 │   └── package.json
-├── database/
-│   ├── schema.sql                # DB schema
-│   └── seed.sql                  # Sample data
-└── docker-compose.yml            # Infrastructure
+└── docker-compose.yml                # Redis + RedisInsight
 ```
 
 ---
@@ -544,11 +674,13 @@ wayvora/
 
 ```bash
 # Backend (.env)
-DATABASE_URL=postgresql://wayvora:wayvora@localhost:5432/wayvora
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3
+NVIDIA_API_KEY=nvapi-your-key-here   # Required for AI features
+NIM_MODEL=meta/llama-3.1-8b-instruct
+NIM_BASE_URL=https://integrate.api.nvidia.com/v1
+NIM_TIMEOUT_MS=30000
+
 PORT=3001
-JWT_SECRET=your-secret-key
+REDIS_URL=redis://localhost:6379     # Optional
 
 # Frontend (.env.local)
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3001/api
@@ -563,22 +695,19 @@ NEXT_PUBLIC_OSRM_URL=http://router.project-osrm.org
 # Install
 npm install
 
-# Start infrastructure
-docker compose up -d
-
-# Pull AI model (first time)
-docker exec wayvora-ollama ollama pull llama3
-
-# Configure
+# Configure (set NVIDIA_API_KEY in .env)
 cp .env.example .env
 cp .env backend/.env
+
+# Start infrastructure (Redis)
+docker compose up -d
 
 # Start app
 npm run dev
 # → Frontend: http://localhost:3000
 # → Backend: http://localhost:3001
 
-# Optional: Warm cache
+# Optional: manually trigger cache warm (geocoding + POIs + AI insights)
 cd backend && npm run warm-cache
 
 # View Redis data
@@ -592,12 +721,14 @@ cd backend && npm run warm-cache
 **What happens when app loads:**
 1. Get user location → Load nearby POIs → Show on map
 2. POIs fetched from Overpass API (cached in Redis)
-3. Passport system loads from localStorage
+3. Backend checks if AI insights cache is empty — warms all cities if so
+4. Passport system loads from localStorage
 
 **What happens when user searches city:**
 1. Geocode query → Get coordinates → Jump to location
 2. Immediately fetch POIs for new location
-3. Map animates while POIs load
+3. Fetch AI city insights (overview, highlights, history, local tip)
+4. Insights served from Redis cache (7-day TTL, pre-warmed by cron)
 
 **What happens when user clicks POI:**
 1. Show detail modal
@@ -614,10 +745,15 @@ cd backend && npm run warm-cache
 5. Show summary in sidebar
 
 **Key files to understand:**
-- `frontend/src/app/page.tsx` - Main state & logic
-- `frontend/src/hooks/usePOIs.ts` - POI loading & filtering
-- `frontend/src/services/gamification.ts` - Passport system
-- `frontend/src/components/WayvMap.tsx` - Map rendering
-- `backend/src/routes/proxy.ts` - API proxy with caching
+- `frontend/src/app/page.tsx` — Main state & logic
+- `frontend/src/hooks/usePOIs.ts` — POI loading & filtering
+- `frontend/src/services/gamification.ts` — Passport system
+- `frontend/src/components/ExplorerSidebar.tsx` — POI list + city insights
+- `frontend/src/components/WayvMap.tsx` — Map rendering
+- `backend/src/routes/proxy.ts` — API proxy with caching
+- `backend/src/routes/ai.ts` — All AI endpoints
+- `backend/src/services/nim.ts` — NVIDIA NIM wrapper
+- `backend/src/scripts/warmCache.ts` — Cache warming (3 steps)
+- `backend/src/scheduler.ts` — Startup check + weekly cron
 
 With this guide, you should be able to navigate the codebase, understand data flows, add features, and debug issues effectively.

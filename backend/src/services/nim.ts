@@ -1,46 +1,50 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
-const REQUEST_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000);
+const NIM_BASE_URL = process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1";
+const NIM_MODEL = process.env.NIM_MODEL || "meta/llama-3.1-8b-instruct";
+const NIM_API_KEY = process.env.NVIDIA_API_KEY || "";
+const REQUEST_TIMEOUT_MS = Number(process.env.NIM_TIMEOUT_MS ?? 30000);
 
-interface OllamaGenerateResponse {
-  response: string;
-  done: boolean;
-  model: string;
+interface NIMChatResponse {
+  choices: {
+    message: {
+      content: string;
+    };
+  }[];
 }
 
-export async function ollamaGenerate(prompt: string, systemPrompt?: string): Promise<string> {
+async function nimGenerate(prompt: string, systemPrompt?: string): Promise<string> {
+  if (!NIM_API_KEY) {
+    throw new Error("NVIDIA_API_KEY is not configured. Set it in your .env file.");
+  }
+
   const messages: { role: string; content: string }[] = [];
   if (systemPrompt) {
     messages.push({ role: "system", content: systemPrompt });
   }
   messages.push({ role: "user", content: prompt });
 
-  const body = {
-    model: OLLAMA_MODEL,
-    messages,
-    stream: false,
-    options: {
-      temperature: 0.7,
-      top_p: 0.9,
-      num_predict: 1024,
-    },
-  };
-
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const controller = new AbortController();
-
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const response = await fetch(`${NIM_BASE_URL}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${NIM_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: NIM_MODEL,
+          messages,
+          temperature: 0.7,
+          top_p: 0.9,
+          max_tokens: 1024,
+        }),
         signal: controller.signal,
       });
 
@@ -48,11 +52,11 @@ export async function ollamaGenerate(prompt: string, systemPrompt?: string): Pro
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Ollama error ${response.status}: ${errText}`);
+        throw new Error(`NIM API error ${response.status}: ${errText}`);
       }
 
-      const data = await response.json();
-      return data.message?.content || data.response || "";
+      const data = (await response.json()) as NIMChatResponse;
+      return data.choices?.[0]?.message?.content || "";
     } catch (err) {
       lastError = err instanceof Error ? err : new Error("Unknown error");
       if (attempt === 0) {
@@ -61,12 +65,13 @@ export async function ollamaGenerate(prompt: string, systemPrompt?: string): Pro
     }
   }
 
-  throw lastError || new Error("Ollama request failed after retries.");
+  throw lastError || new Error("NIM request failed after retries.");
 }
 
 export async function generateRecommendations(
   selectedPois: { name: string; category: string; address: string }[],
-  userPreferences?: string
+  userPreferences?: string,
+  mood?: string
 ): Promise<{ name: string; category: string; reason: string }[]> {
   const poiList = selectedPois
     .map((p, i) => `${i + 1}. ${p.name} (${p.category}) — ${p.address}`)
@@ -74,11 +79,11 @@ export async function generateRecommendations(
 
   const systemPrompt = `You are a knowledgeable local travel assistant. Given a list of places a traveler plans to visit, suggest 3-5 additional places they might enjoy. Return ONLY a valid JSON array with no extra text. Each object must have: "name" (string), "category" (one of: restaurant, cafe, attraction, park, museum), "reason" (short explanation string).`;
 
-  const prompt = `The traveler is visiting these places:\n${poiList}\n${userPreferences ? `\nPreferences: ${userPreferences}` : ""}\n\nSuggest 3-5 complementary places they would enjoy nearby. Return only the JSON array.`;
+  const moodLine = mood ? `\nThe traveler is feeling ${mood} today — tailor suggestions accordingly.` : "";
+  const prompt = `The traveler is visiting these places:\n${poiList}\n${userPreferences ? `\nPreferences: ${userPreferences}` : ""}${moodLine}\n\nSuggest 3-5 complementary places they would enjoy nearby. Return only the JSON array.`;
 
-  const raw = await ollamaGenerate(prompt, systemPrompt);
+  const raw = await nimGenerate(prompt, systemPrompt);
 
-  // Extract JSON from response
   const jsonMatch = raw.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
     return [
@@ -115,7 +120,7 @@ export async function generateTravelTips(poi: {
 
   const prompt = `Place: ${poi.name}\nCategory: ${poi.category}\nAddress: ${poi.address}\n\nProvide travel info as JSON.`;
 
-  const raw = await ollamaGenerate(prompt, systemPrompt);
+  const raw = await nimGenerate(prompt, systemPrompt);
 
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -142,10 +147,6 @@ export async function generateTravelTips(poi: {
   };
 }
 
-/**
- * Generate a unique, interesting fact about a neighborhood
- * This is called when users earn stamps for visiting new neighborhoods
- */
 export async function generateNeighborhoodFact(
   neighborhoodName: string,
   cityName: string
@@ -165,21 +166,16 @@ Focus on history, architecture, culture, famous residents, unique characteristic
 Make it memorable and specific to this location.`;
 
   try {
-    const raw = await ollamaGenerate(prompt, systemPrompt);
+    const raw = await nimGenerate(prompt, systemPrompt);
 
-    // Clean up the response
     let fact = raw.trim();
+    fact = fact.replace(/\*\*/g, "");
+    fact = fact.replace(/\*/g, "");
 
-    // Remove any markdown formatting
-    fact = fact.replace(/\*\*/g, '');
-    fact = fact.replace(/\*/g, '');
-
-    // Ensure it starts with an engaging opener if it doesn't already
     if (!fact.match(/^(Did you know|Fun fact|Interesting)/i)) {
       fact = `Did you know? ${fact}`;
     }
 
-    // Limit to reasonable length
     if (fact.length > 250) {
       fact = fact.substring(0, 247) + "...";
     }
@@ -187,15 +183,10 @@ Make it memorable and specific to this location.`;
     return fact;
   } catch (error) {
     console.error("Error generating neighborhood fact:", error);
-    // Return a generic but personalized fallback
     return `Did you know? ${neighborhoodName} is a distinctive part of ${cityName}, known for its unique character and local charm. Each visit here reveals something new about the city's rich tapestry.`;
   }
 }
 
-/**
- * Generate historical context for a specific POI
- * Used for the historical view feature
- */
 export async function generateHistoricalContext(poi: {
   name: string;
   category: string;
@@ -208,7 +199,7 @@ historical significance, or how it has evolved over time.`;
   const prompt = `Provide historical context for: ${poi.name} (${poi.category}) located at ${poi.address}.`;
 
   try {
-    const raw = await ollamaGenerate(prompt, systemPrompt);
+    const raw = await nimGenerate(prompt, systemPrompt);
     return raw.trim();
   } catch (error) {
     console.error("Error generating historical context:", error);
@@ -216,9 +207,45 @@ historical significance, or how it has evolved over time.`;
   }
 }
 
-/**
- * Generate a personalized city summary based on user's exploration
- */
+export interface CityInsights {
+  overview: string;
+  highlights: string[];
+  historicalFact: string;
+  localTip: string;
+}
+
+function fallbackCityInsights(cityName: string): CityInsights {
+  return {
+    overview: `${cityName} is a dynamic destination with a unique blend of culture, history, and modern attractions worth exploring.`,
+    highlights: ["Historic landmarks", "Local cuisine", "Cultural museums", "Scenic parks"],
+    historicalFact: `${cityName} has a rich history that has shaped the region's culture and identity over centuries.`,
+    localTip: "Explore neighborhoods beyond the tourist center for authentic local experiences.",
+  };
+}
+
+export async function generateCityInsights(cityName: string): Promise<CityInsights> {
+  const systemPrompt = `You are an expert travel writer and historian. Given a city name, provide rich, engaging travel insights. Return ONLY valid JSON with no extra text. The JSON must have exactly these keys: "overview" (2-3 sentences about the city's character and significance), "highlights" (array of exactly 3-4 short strings, each naming a notable attraction or experience), "historicalFact" (1-2 sentences about an interesting historical event or fact specific to this city), "localTip" (1 sentence of insider advice for visitors).`;
+
+  const prompt = `Provide travel insights for: ${cityName}. Return only the JSON object.`;
+
+  const raw = await nimGenerate(prompt, systemPrompt);
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return fallbackCityInsights(cityName);
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    return {
+      overview: parsed.overview || fallbackCityInsights(cityName).overview,
+      highlights: Array.isArray(parsed.highlights) ? parsed.highlights.slice(0, 4) : fallbackCityInsights(cityName).highlights,
+      historicalFact: parsed.historicalFact || fallbackCityInsights(cityName).historicalFact,
+      localTip: parsed.localTip || fallbackCityInsights(cityName).localTip,
+    };
+  } catch {
+    return fallbackCityInsights(cityName);
+  }
+}
+
 export async function generateCitySummary(
   cityName: string,
   neighborhoodsVisited: string[],
@@ -233,7 +260,7 @@ encouraging summary of someone's exploration of a city. Keep it upbeat and motiv
 Write a brief, encouraging summary of their exploration journey.`;
 
   try {
-    const raw = await ollamaGenerate(prompt, systemPrompt);
+    const raw = await nimGenerate(prompt, systemPrompt);
     return raw.trim();
   } catch (error) {
     console.error("Error generating city summary:", error);

@@ -6,6 +6,8 @@ const BASE_URL =
 export interface GeocodingResult {
   id: string;
   displayName: string;
+  shortName: string;
+  region: string;
   coordinates: LatLng;
   type: string;
   category: string;
@@ -16,7 +18,9 @@ export interface GeocodingResult {
 /* ------------------------------------------------------------------ */
 
 let last429Time = 0;
-const COOLDOWN_AFTER_429 = 2000; // 2 seconds
+const COOLDOWN_AFTER_429 = 2000;
+
+const reverseGeocodeCache = new Map<string, string>();
 
 export async function geocodeSearch(
   query: string,
@@ -47,13 +51,24 @@ export async function geocodeSearch(
 
     const data = await response.json();
 
-    return data.map((item: any) => ({
-      id: item.place_id,
-      displayName: item.display_name,
-      coordinates: { lat: parseFloat(item.lat), lng: parseFloat(item.lon) },
-      type: item.type || "",
-      category: item.category || "",
-    }));
+    return data.map((item: any) => {
+      const addr = item.address || {};
+      const shortName =
+        addr.city || addr.town || addr.village || addr.hamlet ||
+        addr.suburb || item.display_name.split(",")[0].trim();
+      const state = addr.state || addr.county || "";
+      const country = addr.country || "";
+      const region = [state, country].filter(Boolean).join(", ");
+      return {
+        id: item.place_id,
+        displayName: item.display_name,
+        shortName,
+        region,
+        coordinates: { lat: parseFloat(item.lat), lng: parseFloat(item.lon) },
+        type: item.type || "",
+        category: item.category || "",
+      };
+    });
   } catch {
     return [];
   }
@@ -64,10 +79,13 @@ export async function geocodeSearch(
 /* ------------------------------------------------------------------ */
 
 export async function reverseGeocode(coords: LatLng): Promise<string> {
+  const fallback = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+  const cacheKey = `${coords.lat.toFixed(3)},${coords.lng.toFixed(3)}`;
+
+  if (reverseGeocodeCache.has(cacheKey)) return reverseGeocodeCache.get(cacheKey)!;
+
   const now = Date.now();
-  if (now - last429Time < COOLDOWN_AFTER_429) {
-    return `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
-  }
+  if (now - last429Time < COOLDOWN_AFTER_429) return fallback;
 
   try {
     const params = new URLSearchParams({
@@ -83,16 +101,16 @@ export async function reverseGeocode(coords: LatLng): Promise<string> {
 
     if (response.status === 429) {
       last429Time = now;
-      return `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+      return fallback;
     }
 
-    if (!response.ok) {
-      return `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
-    }
+    if (!response.ok) return fallback;
 
     const data = await response.json();
-    return data.display_name || `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+    const result = data.display_name || fallback;
+    reverseGeocodeCache.set(cacheKey, result);
+    return result;
   } catch {
-    return `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+    return fallback;
   }
 }

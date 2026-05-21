@@ -1,5 +1,6 @@
-import { setCache, CACHE_TTL, getGridCacheKey, deleteCachePattern, getCache } from '../services/cache';
+import { setCache, CACHE_TTL, getGridCacheKey, deleteCachePattern, getCache, getMissCount, CacheKeys } from '../services/cache';
 import { getCachedCityCoordinates, warmGeocodingCache } from './warmGeocoding';
+import { generateCityInsights } from '../services/nim';
 import crypto from 'crypto';
 import { CITIES } from '../data/cities';
 import redis from '../services/cache';
@@ -22,6 +23,9 @@ const RETRY_DELAYS = [10000, 30000, 60000]; // 10s, 30s, 60s
 
 // Minimum TTL threshold - if cache has less than this, re-warm it
 const MIN_TTL_THRESHOLD = 1800; // 30 minutes
+
+// Delay between NIM AI calls (ms)
+const AI_INSIGHTS_DELAY = 500;
 
 // Track failures for retry
 interface FailedCity {
@@ -71,9 +75,7 @@ function buildQuery(
 (
   ${queries.join('\n  ')}
 );
-out body center 30;
->;
-out skel qt;
+out body center 60;
   `.trim();
 }
 
@@ -89,7 +91,7 @@ async function fetchFromOverpass(query: string, retryCount = 0): Promise<any> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Wayvora-CacheWarmer/2.0',
+        'User-Agent': 'Wandrmark-CacheWarmer/2.0',
       },
       body: `data=${encodeURIComponent(query)}`,
       signal: controller.signal,
@@ -132,6 +134,35 @@ async function fetchFromOverpass(query: string, retryCount = 0): Promise<any> {
 }
 
 /**
+ * Fetch and cache POIs for a single grid cell.
+ */
+async function warmSingleCell(lat: number, lng: number, label: string, skipIfExists: boolean): Promise<boolean> {
+  const cacheKey = getGridCacheKey(lat, lng, RADIUS, [...CATEGORIES]);
+
+  if (skipIfExists) {
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      const ttl = await redis.ttl(cacheKey);
+      if (ttl > MIN_TTL_THRESHOLD) {
+        console.log(`  ⏭️  ${label} (${lat.toFixed(4)}, ${lng.toFixed(4)}): Already cached (TTL: ${Math.floor(ttl / 3600)}h), skipping`);
+        return true;
+      }
+    }
+  }
+
+  const data = await fetchFromOverpass(buildQuery(lat, lng, RADIUS, CATEGORIES));
+
+  if (!data.elements || data.elements.length === 0) {
+    console.log(`  ⚠️  ${label} (${lat.toFixed(4)}, ${lng.toFixed(4)}): No POIs found`);
+    return false;
+  }
+
+  await setCache(cacheKey, data, CACHE_TTL.OVERPASS * 14);
+  console.log(`  ✅ ${label} (${lat.toFixed(4)}, ${lng.toFixed(4)}): ${data.elements.length} POIs cached`);
+  return true;
+}
+
+/**
  * Check if city is already cached with sufficient TTL
  */
 async function isCityCached(cityName: string): Promise<{ cached: boolean; ttl?: number }> {
@@ -167,64 +198,36 @@ async function isCityCached(cityName: string): Promise<{ cached: boolean; ttl?: 
 }
 
 /**
- * Warm cache for a single city
+ * Warm cache for a single city (center cell only).
  */
 async function warmCityCache(cityName: string, skipIfExists = false): Promise<boolean> {
   try {
-    // Skip if already cached with sufficient TTL (for resume functionality)
     if (skipIfExists) {
       const { cached, ttl } = await isCityCached(cityName);
-
-      if (cached) {
-        if (ttl && ttl > MIN_TTL_THRESHOLD) {
-          const hours = Math.floor(ttl / 3600);
-          const minutes = Math.floor((ttl % 3600) / 60);
-          console.log(`⏭️  ${cityName}: Already cached (TTL: ${hours}h ${minutes}m remaining), skipping...`);
-          return true;
-        } else if (ttl) {
-          const minutes = Math.floor(ttl / 60);
-          console.log(`🔄 ${cityName}: Cache exists but TTL low (${minutes}m), re-warming...`);
-        }
+      if (cached && ttl && ttl > MIN_TTL_THRESHOLD) {
+        const hours = Math.floor(ttl / 3600);
+        const minutes = Math.floor((ttl % 3600) / 60);
+        console.log(`⏭️  ${cityName}: Already cached (TTL: ${hours}h ${minutes}m remaining), skipping...`);
+        return true;
+      } else if (cached && ttl) {
+        console.log(`🔄 ${cityName}: Cache exists but TTL low (${Math.floor(ttl / 60)}m), re-warming...`);
       }
     }
 
-    console.log(`🔥 Warming POI cache for ${cityName}...`);
-
-    // Get coordinates from Nominatim cache
     const coords = await getCachedCityCoordinates(cityName);
-
     if (!coords) {
       console.log(`⚠️  ${cityName}: No coordinates found in cache. Run geocoding warmer first.`);
       failedCities.push({ name: cityName, error: 'No coordinates', attempts: 1 });
       return false;
     }
 
-    const query = buildQuery(coords.lat, coords.lng, RADIUS, CATEGORIES);
-
-    // Use grid-based cache key instead of query hash
-    const cacheKey = getGridCacheKey(coords.lat, coords.lng, RADIUS, [...CATEGORIES]);
-
-    console.log(`📍 ${cityName}: Cache key = ${cacheKey}`);
-
-    // Fetch data from Overpass with retries
-    const data = await fetchFromOverpass(query);
-
-    if (!data.elements || data.elements.length === 0) {
-      console.log(`⚠️  ${cityName}: No POIs found`);
-      return false;
-    }
-
-    // Store in Redis with extended TTL for popular cities
-    await setCache(cacheKey, data, CACHE_TTL.OVERPASS * 2); // 2 hours for pre-cached cities
-
-    console.log(`✅ ${cityName}: Cached ${data.elements.length} POIs at grid (${coords.lat.toFixed(2)}, ${coords.lng.toFixed(2)})`);
-    console.log(`   Key: ${cacheKey}`);
-    return true;
+    console.log(`🔥 Warming POI cache for ${cityName}...`);
+    const success = await warmSingleCell(coords.lat, coords.lng, cityName, skipIfExists);
+    if (!success) failedCities.push({ name: cityName, error: 'No POIs found', attempts: 1 });
+    return success;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error(`❌ ${cityName}: Failed -`, errorMsg);
-
-    // Track failure
     const existing = failedCities.find(f => f.name === cityName);
     if (existing) {
       existing.attempts++;
@@ -232,9 +235,64 @@ async function warmCityCache(cityName: string, skipIfExists = false): Promise<bo
     } else {
       failedCities.push({ name: cityName, error: errorMsg, attempts: 1 });
     }
-
     return false;
   }
+}
+
+/**
+ * Generate and cache AI insights for a single city.
+ * Skips automatically if insights are still fresh (> 1 day TTL remaining).
+ */
+async function warmCityInsights(cityEntry: string): Promise<boolean> {
+  // Use only the city name part (strip ", Country")
+  const cityName = cityEntry.split(",")[0].trim();
+  const cacheKey = CacheKeys.aiCityInsights(cityName);
+
+  const ttl = await redis.ttl(cacheKey);
+  if (ttl > 86400) {
+    console.log(`  ⏭️  ${cityName}: AI insights fresh (TTL: ${Math.floor(ttl / 86400)}d), skipping`);
+    return true;
+  }
+
+  try {
+    console.log(`  🤖 Generating AI insights for ${cityName}...`);
+    const insights = await generateCityInsights(cityName);
+    await setCache(cacheKey, insights, CACHE_TTL.AI_CITY_INSIGHTS);
+    console.log(`  ✅ ${cityName}: AI insights cached (7 days)`);
+    return true;
+  } catch (err) {
+    console.error(`  ❌ ${cityName}: AI insights failed -`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/**
+ * Check if AI city insights cache is empty (used on startup to decide whether to warm immediately).
+ * Samples a known city — if it has no insights, the cache is considered empty.
+ */
+export async function checkInsightsEmpty(): Promise<boolean> {
+  const sampleKey = CacheKeys.aiCityInsights("New York");
+  const cached = await getCache(sampleKey);
+  return cached === null;
+}
+
+/**
+ * Sort a city list so the most cache-missed cities are warmed first.
+ * Cities with no recorded coordinates (not yet geocoded) stay at the end.
+ */
+async function sortCitiesByMissCount(cities: string[]): Promise<string[]> {
+  const withCounts = await Promise.all(
+    cities.map(async (city) => {
+      const coords = await getCachedCityCoordinates(city);
+      const misses = coords
+        ? await getMissCount(getGridCacheKey(coords.lat, coords.lng, RADIUS, [...CATEGORIES]))
+        : 0;
+      return { city, misses };
+    })
+  );
+  return withCounts
+    .sort((a, b) => b.misses - a.misses)
+    .map(c => c.city);
 }
 
 /**
@@ -254,6 +312,7 @@ async function saveFailedCities(): Promise<void> {
   const path = require('path');
 
   const failedFile = path.join(__dirname, '../../data/failed_cities.json');
+  fs.mkdirSync(path.dirname(failedFile), { recursive: true });
   const data = {
     timestamp: new Date().toISOString(),
     failures: failedCities
@@ -324,15 +383,18 @@ export async function warmMajorCities(citiesList?: string[], options?: {
     console.log(`⏭️  Skip mode: Will skip cached cities with TTL > ${MIN_TTL_THRESHOLD / 60} minutes\n`);
   }
 
-  const citiesToWarm = citiesList || CITIES;
+  const rawCities = citiesList || CITIES;
 
-  console.log('📍 Step 1/2: Warming geocoding cache...\n');
-  await warmGeocodingCache(citiesToWarm, skipExisting);
+  console.log('📍 Step 1/3: Warming geocoding cache...\n');
+  await warmGeocodingCache(rawCities, skipExisting);
 
   console.log('\n⏳ Waiting 5 seconds before starting POI cache warming...\n');
   await delay(5000);
 
-  console.log('🗺️  Step 2/2: Warming POI cache...\n');
+  console.log('🗺️  Step 2/3: Sorting cities by miss count and warming POI cache...\n');
+  const citiesToWarm = await sortCitiesByMissCount(rawCities);
+  const topMissed = citiesToWarm.slice(0, 5).join(', ');
+  if (topMissed) console.log(`   Most-missed cities first: ${topMissed}\n`);
 
   let successCount = 0;
   let failCount = 0;
@@ -353,10 +415,24 @@ export async function warmMajorCities(citiesList?: string[], options?: {
     }
   }
 
+  console.log('\n🤖 Step 3/3: Warming AI city insights...\n');
+  let insightSuccess = 0;
+  let insightFail = 0;
+
+  for (let i = 0; i < citiesToWarm.length; i++) {
+    const ok = await warmCityInsights(citiesToWarm[i]);
+    ok ? insightSuccess++ : insightFail++;
+
+    if (i < citiesToWarm.length - 1) {
+      await delay(AI_INSIGHTS_DELAY);
+    }
+  }
+
   console.log('\n' + '='.repeat(60));
   console.log(`✅ Cache warming finished`);
   console.log(`   Geocoding: done`);
   console.log(`   POI Cache: ${successCount} success, ${failCount} failed`);
+  console.log(`   AI Insights: ${insightSuccess} success, ${insightFail} failed`);
   if (skipExisting) {
     console.log(`   Skipped: ${skippedCount} (already cached)`);
   }
@@ -380,7 +456,7 @@ export async function warmTopCities(): Promise<void> {
  * Clear cache ONLY
  */
 export async function clearCache(): Promise<void> {
-  const deletedCount = await deleteCachePattern('wayvora:*');
+  const deletedCount = await deleteCachePattern('wandrmark:*');
   console.log(`[CACHE] Cleared all cache (${deletedCount} keys)`);
 }
 

@@ -1,10 +1,8 @@
 import { SavedPOI, Itinerary } from "@/types";
 
 const KEYS = {
-  FAVORITES: "wayvora:favorites",
-  ITINERARIES: "wayvora:itineraries",
-  AUTH_TOKEN: "wayvora:token",
-  AUTH_USER: "wayvora:user",
+  FAVORITES: "wandrmark:favorites",
+  ITINERARIES: "wandrmark:itineraries",
 } as const;
 
 function safeGet<T>(key: string): T | null {
@@ -21,15 +19,6 @@ function safeSet(key: string, value: unknown): void {
   try {
     if (typeof window === "undefined") return;
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    console.error("localStorage write failed for key:", key);
-  }
-}
-
-function safeRemove(key: string): void {
-  try {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem(key);
   } catch {}
 }
 
@@ -43,14 +32,10 @@ export const localFavorites = {
     safeSet(KEYS.FAVORITES, [...current, poi]);
   },
   remove(poiId: string): void {
-    const current = this.getAll();
-    safeSet(KEYS.FAVORITES, current.filter((p) => p.id !== poiId));
+    safeSet(KEYS.FAVORITES, this.getAll().filter((p) => p.id !== poiId));
   },
   has(poiId: string): boolean {
     return this.getAll().some((p) => p.id === poiId);
-  },
-  clear(): void {
-    safeSet(KEYS.FAVORITES, []);
   },
 };
 
@@ -59,40 +44,9 @@ export const localItineraries = {
     return safeGet<Itinerary[]>(KEYS.ITINERARIES) ?? [];
   },
   add(itinerary: Itinerary): void {
-    const current = this.getAll();
-    safeSet(KEYS.ITINERARIES, [...current, itinerary]);
-  },
-  update(id: string, updates: Partial<Itinerary>): void {
-    const current = this.getAll();
-    safeSet(
-      KEYS.ITINERARIES,
-      current.map((it) => (it.id === id ? { ...it, ...updates, updatedAt: Date.now() } : it))
-    );
+    safeSet(KEYS.ITINERARIES, [...this.getAll(), itinerary]);
   },
   remove(id: string): void {
-    const current = this.getAll();
-    safeSet(KEYS.ITINERARIES, current.filter((it) => it.id !== id));
-  },
-  clear(): void {
-    safeSet(KEYS.ITINERARIES, []);
-  },
-};
-
-export const localAuth = {
-  setToken(token: string): void {
-    safeSet(KEYS.AUTH_TOKEN, token);
-  },
-  getToken(): string | null {
-    return safeGet<string>(KEYS.AUTH_TOKEN);
-  },
-  setUser(user: unknown): void {
-    safeSet(KEYS.AUTH_USER, user);
-  },
-  getUser(): unknown | null {
-    return safeGet(KEYS.AUTH_USER);
-  },
-  clear(): void {
-    safeRemove(KEYS.AUTH_TOKEN);
-    safeRemove(KEYS.AUTH_USER);
+    safeSet(KEYS.ITINERARIES, this.getAll().filter((it) => it.id !== id));
   },
 };

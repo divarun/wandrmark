@@ -44,20 +44,21 @@ redis.on('reconnecting', () => {
  * Cache TTL constants (in seconds)
  */
 export const CACHE_TTL = {
-  OVERPASS: 3600,        // 1 hour - POI data changes infrequently
-  NOMINATIM: 86400,      // 24 hours - geocoding results are stable
-  AI_NEIGHBORHOOD: 604800, // 7 days - neighborhood facts don't change
-  AI_TIPS: 3600,         // 1 hour - travel tips can be reused
-  AI_RECOMMENDATIONS: 1800, // 30 minutes - recommendations based on context
-  PASSPORT: 300,         // 5 minutes - user passport data (frequent updates)
-  STAMPS: 300,           // 5 minutes - stamps collection
+  OVERPASS: 3600,           // 1 hour
+  NOMINATIM: 86400,         // 24 hours
+  AI_NEIGHBORHOOD: 604800,  // 7 days
+  AI_TIPS: 3600,            // 1 hour
+  AI_RECOMMENDATIONS: 1800, // 30 minutes
+  AI_CITY_SUMMARY: 3600,    // 1 hour
+  AI_HISTORICAL: 604800,    // 7 days
+  AI_CITY_INSIGHTS: 604800, // 7 days
 };
 
 /**
  * Generate cache key with prefix
  */
 function getCacheKey(prefix: string, ...parts: string[]): string {
-  return `wayvora:${prefix}:${parts.join(':')}`;
+  return `wandrmark:${prefix}:${parts.join(':')}`;
 }
 
 /**
@@ -80,7 +81,7 @@ export function getGridCacheKey(
 
   const sortedCategories = [...categories].sort().join('-');
 
-  return `wayvora:overpass:grid:${gridLat.toFixed(5)}:${gridLng.toFixed(5)}:${radius}:${sortedCategories}`;
+  return `wandrmark:overpass:grid:${gridLat.toFixed(5)}:${gridLng.toFixed(5)}:${radius}:${sortedCategories}`;
 }
 
 
@@ -142,32 +143,79 @@ export async function deleteCachePattern(pattern: string): Promise<number> {
   }
 }
 
-/**
- * Cache helpers for specific services
- */
 export const CacheKeys = {
-  overpass: (query: string) => getCacheKey('overpass', Buffer.from(query).toString('base64').substring(0, 50)),
-  nominatim: (type: 'search' | 'reverse', params: string) => getCacheKey('nominatim', type, params),
+  overpass: (query: string) => getCacheKey("overpass", Buffer.from(query).toString("base64").substring(0, 50)),
+  nominatim: (type: "search" | "reverse", params: string) => getCacheKey("nominatim", type, params),
   aiNeighborhoodFact: (neighborhood: string, city: string) =>
-    getCacheKey('ai', 'neighborhood', city.toLowerCase(), neighborhood.toLowerCase()),
-  aiTips: (poiName: string, category: string) =>
-    getCacheKey('ai', 'tips', category, poiName.toLowerCase().substring(0, 30)),
+    getCacheKey("ai", "neighborhood", city.toLowerCase(), neighborhood.toLowerCase()),
+  aiTips: (poiName: string, category: string, address: string) =>
+    getCacheKey("ai", "tips", category, poiName.toLowerCase().substring(0, 30), address.toLowerCase().substring(0, 40)),
   aiRecommendations: (selectedPois: string, preferences: string) =>
-    getCacheKey('ai', 'recs', Buffer.from(selectedPois + preferences).toString('base64').substring(0, 50)),
-  userPassport: (userId: string) => getCacheKey('passport', userId),
-  userStamps: (userId: string) => getCacheKey('stamps', userId),
-  userBadges: (userId: string) => getCacheKey('badges', userId),
+    getCacheKey("ai", "recs", Buffer.from(selectedPois + preferences).toString("base64").substring(0, 50)),
+  aiCitySummary: (cityName: string, neighborhoods: string[]) =>
+    getCacheKey("ai", "city", cityName.toLowerCase(), [...neighborhoods].sort().join("-").substring(0, 50)),
+  aiHistoricalContext: (name: string, category: string, address: string) =>
+    getCacheKey("ai", "historical", category, name.toLowerCase().substring(0, 40), address.toLowerCase().substring(0, 40)),
+  aiCityInsights: (cityName: string) =>
+    getCacheKey("ai", "city-insights", cityName.split(",")[0].toLowerCase().trim()),
 };
 
 /**
- * Invalidate user-related caches
+ * Acquire a Redis lock (SET NX). Returns true if the lock was granted.
+ * Used to prevent cache stampedes: only the first request fetches; others wait.
  */
-export async function invalidateUserCache(userId: string): Promise<void> {
-  await Promise.all([
-    deleteCache(CacheKeys.userPassport(userId)),
-    deleteCache(CacheKeys.userStamps(userId)),
-    deleteCache(CacheKeys.userBadges(userId)),
-  ]);
+export async function acquireLock(key: string, ttlSeconds = 30): Promise<boolean> {
+  try {
+    const result = await redis.set(`${key}:lock`, '1', 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Release a previously acquired lock.
+ */
+export async function releaseLock(key: string): Promise<void> {
+  try {
+    await redis.del(`${key}:lock`);
+  } catch {}
+}
+
+/**
+ * Increment the miss counter for a cache key.
+ * Counter expires after 30 days so unused keys don't accumulate.
+ */
+export async function trackMiss(cacheKey: string): Promise<void> {
+  try {
+    const missKey = `wandrmark:miss:${cacheKey}`;
+    await redis.incr(missKey);
+    await redis.expire(missKey, 30 * 24 * 3600);
+  } catch {}
+}
+
+/**
+ * Return the miss count for a cache key (0 if not tracked yet).
+ */
+export async function getMissCount(cacheKey: string): Promise<number> {
+  try {
+    const val = await redis.get(`wandrmark:miss:${cacheKey}`);
+    return val ? parseInt(val, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Return the remaining TTL in seconds for a key.
+ * Redis returns -1 (no expiry) or -2 (key not found).
+ */
+export async function getCacheTTL(key: string): Promise<number> {
+  try {
+    return await redis.ttl(key);
+  } catch {
+    return -2;
+  }
 }
 
 /**
