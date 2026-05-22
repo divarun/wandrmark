@@ -132,7 +132,7 @@ app.use("/api/cache", cacheRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/docs", (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const secret = process.env.CACHE_WARM_SECRET;
-  if (!secret) return next();
+  if (!secret || isWhitelistedIP(req)) return next();
   const provided = req.headers["x-cache-secret"];
   if (typeof provided !== "string") {
     return res.status(401).json({ error: "API docs require x-cache-secret header." });

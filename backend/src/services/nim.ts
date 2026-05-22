@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config();
+import { trackNimCall, NimEndpoint } from "./nimUsage";
 
 const NIM_BASE_URL = process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1";
 const NIM_MODEL = process.env.NIM_MODEL || "meta/llama-3.1-8b-instruct";
@@ -14,7 +15,7 @@ interface NIMChatResponse {
   }[];
 }
 
-async function nimGenerate(prompt: string, systemPrompt?: string): Promise<string> {
+async function nimGenerate(prompt: string, systemPrompt: string | undefined, endpoint: NimEndpoint): Promise<string> {
   if (!NIM_API_KEY) {
     throw new Error("NVIDIA_API_KEY is not configured. Set it in your .env file.");
   }
@@ -57,7 +58,10 @@ async function nimGenerate(prompt: string, systemPrompt?: string): Promise<strin
       }
 
       const data = (await response.json()) as NIMChatResponse;
-      return data.choices?.[0]?.message?.content || "";
+      const result = data.choices?.[0]?.message?.content || "";
+      const promptChars = (systemPrompt?.length ?? 0) + prompt.length;
+      trackNimCall(endpoint, promptChars, result.length);
+      return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error("Unknown error");
       if (attempt === 0) {
@@ -83,7 +87,7 @@ export async function generateRecommendations(
   const moodLine = mood ? `\nThe traveler is feeling ${mood} today — tailor suggestions accordingly.` : "";
   const prompt = `The traveler is visiting these places:\n${poiList}\n${userPreferences ? `\nPreferences: ${userPreferences}` : ""}${moodLine}\n\nSuggest 3-5 complementary places they would enjoy nearby. Return only the JSON array.`;
 
-  const raw = await nimGenerate(prompt, systemPrompt);
+  const raw = await nimGenerate(prompt, systemPrompt, "recommendations");
 
   const jsonMatch = raw.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
@@ -121,7 +125,7 @@ export async function generateTravelTips(poi: {
 
   const prompt = `Place: ${poi.name}\nCategory: ${poi.category}\nAddress: ${poi.address}\n\nProvide travel info as JSON.`;
 
-  const raw = await nimGenerate(prompt, systemPrompt);
+  const raw = await nimGenerate(prompt, systemPrompt, "travel-tips");
 
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -167,7 +171,7 @@ Focus on history, architecture, culture, famous residents, unique characteristic
 Make it memorable and specific to this location.`;
 
   try {
-    const raw = await nimGenerate(prompt, systemPrompt);
+    const raw = await nimGenerate(prompt, systemPrompt, "neighborhood-fact");
 
     let fact = raw.trim();
     fact = fact.replace(/\*\*/g, "");
@@ -200,7 +204,7 @@ historical significance, or how it has evolved over time.`;
   const prompt = `Provide historical context for: ${poi.name} (${poi.category}) located at ${poi.address}.`;
 
   try {
-    const raw = await nimGenerate(prompt, systemPrompt);
+    const raw = await nimGenerate(prompt, systemPrompt, "historical-context");
     return raw.trim();
   } catch (error) {
     console.error("Error generating historical context:", error);
@@ -229,7 +233,7 @@ export async function generateCityInsights(cityName: string): Promise<CityInsigh
 
   const prompt = `Provide travel insights for: ${cityName}. Return only the JSON object.`;
 
-  const raw = await nimGenerate(prompt, systemPrompt);
+  const raw = await nimGenerate(prompt, systemPrompt, "city-insights");
 
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return fallbackCityInsights(cityName);
@@ -261,7 +265,7 @@ encouraging summary of someone's exploration of a city. Keep it upbeat and motiv
 Write a brief, encouraging summary of their exploration journey.`;
 
   try {
-    const raw = await nimGenerate(prompt, systemPrompt);
+    const raw = await nimGenerate(prompt, systemPrompt, "city-summary");
     return raw.trim();
   } catch (error) {
     console.error("Error generating city summary:", error);

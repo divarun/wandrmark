@@ -2,6 +2,7 @@ import { Router, Response, Request } from "express";
 import { z } from "zod";
 import { generateRecommendations, generateTravelTips, generateNeighborhoodFact, generateCitySummary, generateHistoricalContext, generateCityInsights } from "../services/nim";
 import { getCache, setCache, CACHE_TTL, CacheKeys } from "../services/cache";
+import { getNimUsage } from "../services/nimUsage";
 
 const router = Router();
 
@@ -214,6 +215,17 @@ router.post("/city-insights", async (req: Request, res: Response) => {
     console.error("[AI] City insights error:", err);
     const message = err instanceof Error ? err.message : "AI service error.";
     res.status(503).json({ error: `AI service unavailable: ${message}. Check your NVIDIA_API_KEY.` });
+  }
+});
+
+// GET /ai/usage
+router.get("/usage", async (_req: Request, res: Response) => {
+  try {
+    const stats = await getNimUsage();
+    res.json(stats);
+  } catch (err) {
+    console.error("[AI] Usage stats error:", err);
+    res.status(500).json({ error: "Failed to retrieve NIM usage stats" });
   }
 });
 
