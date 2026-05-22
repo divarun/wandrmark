@@ -86,18 +86,16 @@ export interface AnalyticsStats {
 
 async function topN(key: string, n: number): Promise<RankedEntry[]> {
   try {
-    if (useUpstash) {
-      const raw = await redis.zrange(key, 0, n - 1, { rev: true, withScores: true }) as { member: string; score: number }[];
-      return (raw ?? []).map(r => ({ name: r.member, count: r.score }));
-    } else {
-      // ioredis returns interleaved [member, score, member, score, ...]
-      const raw: string[] = await redis.zrevrange(key, 0, n - 1, 'WITHSCORES');
-      const result: RankedEntry[] = [];
-      for (let i = 0; i < raw.length; i += 2) {
-        result.push({ name: raw[i], count: Number(raw[i + 1]) });
-      }
-      return result;
+    // Both ioredis and @upstash/redis return a flat interleaved array:
+    // [member, score, member, score, ...]
+    const raw: (string | number)[] = useUpstash
+      ? await redis.zrange(key, 0, n - 1, { rev: true, withScores: true })
+      : await redis.zrevrange(key, 0, n - 1, 'WITHSCORES');
+    const result: RankedEntry[] = [];
+    for (let i = 0; i < raw.length; i += 2) {
+      result.push({ name: String(raw[i]), count: Number(raw[i + 1]) });
     }
+    return result;
   } catch {
     return [];
   }
@@ -105,17 +103,16 @@ async function topN(key: string, n: number): Promise<RankedEntry[]> {
 
 async function allFromZSet(key: string): Promise<Record<string, number>> {
   try {
-    if (useUpstash) {
-      const raw = await redis.zrange(key, 0, -1, { withScores: true }) as { member: string; score: number }[];
-      return Object.fromEntries((raw ?? []).map(r => [r.member, r.score]));
-    } else {
-      const raw: string[] = await redis.zrange(key, 0, -1, 'WITHSCORES');
-      const result: Record<string, number> = {};
-      for (let i = 0; i < raw.length; i += 2) {
-        result[raw[i]] = Number(raw[i + 1]);
-      }
-      return result;
+    // Both ioredis and @upstash/redis return a flat interleaved array:
+    // [member, score, member, score, ...]
+    const raw: (string | number)[] = useUpstash
+      ? await redis.zrange(key, 0, -1, { withScores: true })
+      : await redis.zrange(key, 0, -1, 'WITHSCORES');
+    const result: Record<string, number> = {};
+    for (let i = 0; i < raw.length; i += 2) {
+      result[String(raw[i])] = Number(raw[i + 1]);
     }
+    return result;
   } catch {
     return {};
   }
