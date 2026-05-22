@@ -13,19 +13,40 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const IS_PROD = process.env.NODE_ENV === "production";
 
-if (process.env.NODE_ENV === "production" && !process.env.NVIDIA_API_KEY) {
+if (IS_PROD && !process.env.NVIDIA_API_KEY) {
   console.error("❌ NVIDIA_API_KEY is required in production");
   process.exit(1);
 }
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",")
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
   : ["http://localhost:3000", "http://localhost:3001"];
+
+// IPs allowed to call the API without a browser Origin header (e.g. your local machine).
+// In development localhost is always allowed; in production only explicitly listed IPs pass.
+const ALLOWED_IPS: string[] = process.env.ALLOWED_IPS
+  ? process.env.ALLOWED_IPS.split(",").map((ip) => ip.trim())
+  : [];
+
+// Trust the first proxy hop so req.ip reflects the real client IP behind nginx / a load balancer.
+app.set("trust proxy", 1);
+
+function getClientIP(req: express.Request): string {
+  return (req.ip ?? req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+}
+
+function isWhitelistedIP(req: express.Request): boolean {
+  const ip = getClientIP(req);
+  if (!IS_PROD && (ip === "127.0.0.1" || ip === "::1")) return true;
+  return ALLOWED_IPS.includes(ip);
+}
 
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Non-browser requests have no Origin header; the IP-whitelist middleware handles them.
       if (!origin) return callback(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
       console.warn(`🚫 Blocked CORS request from: ${origin}`);
@@ -37,6 +58,31 @@ app.use(
     maxAge: 86400,
   })
 );
+
+// In production, enforce origin and IP rules server-side — not just via CORS headers.
+// CORS alone is browser-enforced: the server still processes (and pays for) cross-origin
+// requests even if the browser hides the response. We reject them here instead.
+if (IS_PROD) {
+  app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const origin = req.headers.origin;
+
+    if (origin) {
+      // Browser request from a disallowed origin — refuse before doing any work.
+      if (!ALLOWED_ORIGINS.includes(origin)) {
+        console.warn(`🚫 Blocked cross-origin request from: ${origin}`);
+        return res.status(403).json({ error: "Forbidden" });
+      }
+    } else {
+      // No origin header — non-browser client. Must be a whitelisted IP.
+      if (!isWhitelistedIP(req)) {
+        console.warn(`🚫 Blocked non-browser request from ${getClientIP(req)}`);
+        return res.status(403).json({ error: "Forbidden" });
+      }
+    }
+
+    next();
+  });
+}
 
 const apiLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "900000"),
@@ -54,10 +100,21 @@ const proxyLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Tight limit on AI routes — each call hits the NVIDIA API and costs money.
+// 15 requests per 15 minutes per IP is generous for real use but stops abuse.
+const aiLimiter = rateLimit({
+  windowMs: parseInt(process.env.AI_RATE_LIMIT_WINDOW_MS || "900000"),
+  max: parseInt(process.env.AI_RATE_LIMIT_MAX_REQUESTS || "15"),
+  message: { error: "AI request limit reached. Please wait before trying again." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/api/", apiLimiter);
 app.use("/api/proxy/", proxyLimiter);
+app.use("/api/ai/", aiLimiter);
 
 app.use("/api/ai", aiRoutes);
 app.use("/api/proxy", proxyRoutes);
