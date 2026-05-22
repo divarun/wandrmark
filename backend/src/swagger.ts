@@ -1,5 +1,4 @@
-import swaggerUi from "swagger-ui-express";
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 
 const spec = {
   openapi: "3.0.3",
@@ -514,7 +513,34 @@ const spec = {
 };
 
 const router = Router();
-router.use("/", swaggerUi.serve);
-router.get("/", swaggerUi.setup(spec, { customSiteTitle: "Wandrmark API Docs" }));
+
+router.get("/spec", (_req: Request, res: Response) => {
+  res.json(spec);
+});
+
+router.get("/", (_req: Request, res: Response) => {
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wandrmark API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      spec: ${JSON.stringify(spec)},
+      dom_id: '#swagger-ui',
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+    });
+  </script>
+</body>
+</html>`);
+});
 
 export default router;
