@@ -1,0 +1,78 @@
+import { Router, Request, Response } from "express";
+import crypto from "crypto";
+import { z } from "zod";
+import { submitBug, getBugReports, toggleStar, getStarStatus } from "../services/feedback";
+
+const router = Router();
+
+function getClientIP(req: Request): string {
+  return ((req.ip ?? req.socket.remoteAddress) || "").replace(/^::ffff:/, "");
+}
+
+function checkSecret(req: Request, res: Response): boolean {
+  const secret = process.env.CACHE_WARM_SECRET;
+  if (!secret) return true;
+  const provided = req.headers["x-cache-secret"];
+  if (typeof provided !== "string") {
+    res.status(401).json({ error: "Invalid or missing x-cache-secret header" });
+    return false;
+  }
+  const secretBuf  = Buffer.from(secret,   "utf8");
+  const providedBuf = Buffer.from(provided, "utf8");
+  if (secretBuf.length !== providedBuf.length || !crypto.timingSafeEqual(secretBuf, providedBuf)) {
+    res.status(401).json({ error: "Invalid or missing x-cache-secret header" });
+    return false;
+  }
+  return true;
+}
+
+const BugSchema = z.object({
+  message: z.string().min(10).max(1000).trim(),
+});
+
+// POST /feedback/bug — open (anyone can submit)
+router.post("/bug", async (req: Request, res: Response) => {
+  const parsed = BugSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Message must be 10–1000 characters." });
+  }
+  try {
+    const report = await submitBug(getClientIP(req), parsed.data.message);
+    res.json({ success: true, id: report.id });
+  } catch {
+    res.status(500).json({ error: "Failed to submit bug report." });
+  }
+});
+
+// GET /feedback/bugs — admin only (requires warm secret)
+router.get("/bugs", async (req: Request, res: Response) => {
+  if (!checkSecret(req, res)) return;
+  try {
+    const reports = await getBugReports();
+    res.json({ count: reports.length, reports });
+  } catch {
+    res.status(500).json({ error: "Failed to retrieve bug reports." });
+  }
+});
+
+// POST /feedback/star — open, toggles for current IP
+router.post("/star", async (req: Request, res: Response) => {
+  try {
+    const result = await toggleStar(getClientIP(req));
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Failed to update star." });
+  }
+});
+
+// GET /feedback/star — open, returns count + whether current IP starred
+router.get("/star", async (req: Request, res: Response) => {
+  try {
+    const result = await getStarStatus(getClientIP(req));
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Failed to get star status." });
+  }
+});
+
+export default router;
