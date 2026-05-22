@@ -18,6 +18,7 @@ import AchievementToast, {
   showXPToast,
   showAchievementToast,
   showLevelUpToast,
+  showInfoToast,
 } from "@/components/AchievementToast";
 import { LevelUpModal } from "@/components/LevelUpModal";
 
@@ -84,7 +85,7 @@ export default function Home() {
   const [levelUpData, setLevelUpData] = useState<{ level: number; title: ExplorerTitle } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const { pois, loading, error, activeCategories, toggleCategory, load } = usePOIs();
+  const { pois, loading, error, activeCategories, toggleCategory, selectAllCategories, load } = usePOIs();
   const { visitPOI, progress, visitedPoiIds, saveTripMemory } = useGamification();
   const mapMoveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -152,11 +153,12 @@ export default function Home() {
   }, [load]);
 
   const addToPlanner = useCallback((poi: POI | Partial<POI>) => {
-    setPlannerPois((prev) => {
-      if (poi.id && prev.some((p) => p.id === poi.id)) return prev;
-      return [...prev, poi as POI];
-    });
-  }, []);
+    if (poi.id && plannerPois.some((p) => p.id === poi.id)) {
+      showInfoToast(`${poi.name || "Place"} is already in your plan`, "📍");
+      return;
+    }
+    setPlannerPois((prev) => [...prev, poi as POI]);
+  }, [plannerPois]);
 
   const removeFromPlanner = useCallback((id: string) => {
     setPlannerPois((prev) => prev.filter((p) => p.id !== id));
@@ -307,7 +309,7 @@ export default function Home() {
           <div className="relative w-72 max-w-[85vw] flex flex-col h-full animate-slide-in-left" style={{ background: "var(--bg-2)", borderRight: "1px solid var(--line)" }}>
             <div className="flex-shrink-0 flex items-center gap-2" style={{ padding: "10px 12px", borderBottom: "1px solid var(--line)" }}>
               <div className="flex-1 min-w-0">
-                <CategoryFilter active={activeCategories} onToggle={toggleCategory} />
+                <CategoryFilter active={activeCategories} onToggle={toggleCategory} onSelectAll={selectAllCategories} />
               </div>
               <button
                 onClick={() => setSidebarOpen(false)}
@@ -358,7 +360,7 @@ export default function Home() {
         {/* Desktop left sidebar */}
         <div className="hidden md:flex w-80 flex-shrink-0 flex-col relative z-10 overflow-hidden" style={{ background: "linear-gradient(180deg, var(--bg-2), var(--bg))", borderRight: "1px solid var(--line)" }}>
           <div className="flex-shrink-0" style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-            <CategoryFilter active={activeCategories} onToggle={toggleCategory} />
+            <CategoryFilter active={activeCategories} onToggle={toggleCategory} onSelectAll={selectAllCategories} />
           </div>
           <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {sidebarContent}

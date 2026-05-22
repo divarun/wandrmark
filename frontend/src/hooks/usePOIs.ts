@@ -41,6 +41,10 @@ export function usePOIs() {
     );
   }, []);
 
+  const selectAllCategories = useCallback(() => {
+    setActiveCategories(["restaurant", "cafe", "attraction", "park", "museum"]);
+  }, []);
+
   const filteredPois = useMemo(
     () => pois.filter((poi) => activeCategories.includes(poi.category)),
     [pois, activeCategories]
@@ -52,6 +56,7 @@ export function usePOIs() {
     error,
     activeCategories,
     toggleCategory,
+    selectAllCategories,
     load,
   };
 }

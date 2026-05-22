@@ -2,6 +2,7 @@
 import "@/styles/globals.css";
 import { GamificationProvider } from "@/contexts/GamificationContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { Analytics } from "@vercel/analytics/react";
 import { useEffect, useState } from "react";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </GamificationProvider>
           </ErrorBoundary>
         )}
+        <Analytics />
       </body>
     </html>
   );

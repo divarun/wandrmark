@@ -43,6 +43,7 @@ export default function PlannerSidebar({
   const [showSaved, setShowSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
 
   useEffect(() => {
     setSavedItineraries(localItineraries.getAll());
@@ -139,18 +140,30 @@ export default function PlannerSidebar({
             })}
           </div>
           {plannerPois.length > 0 && (
-            <button
-              onClick={onClear}
-              style={{
-                padding: "5px 10px", borderRadius: "8px",
-                background: "oklch(0.28 0.08 22 / 0.2)",
-                border: "1px solid oklch(0.5 0.12 22 / 0.4)",
-                color: "var(--coral)", fontSize: "11px", fontWeight: 600,
-                cursor: "pointer", flexShrink: 0,
-              }}
-            >
-              Clear
-            </button>
+            confirmingClear ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                <span style={{ fontSize: "11px", color: "var(--ink-3)", whiteSpace: "nowrap" }}>Clear all?</span>
+                <button
+                  onClick={() => { onClear(); setConfirmingClear(false); }}
+                  style={{ padding: "4px 8px", borderRadius: "7px", background: "oklch(0.28 0.08 22 / 0.25)", border: "1px solid oklch(0.5 0.12 22 / 0.5)", color: "var(--coral)", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setConfirmingClear(false)}
+                  style={{ padding: "4px 8px", borderRadius: "7px", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--ink-3)", fontSize: "11px", fontWeight: 500, cursor: "pointer" }}
+                >
+                  No
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmingClear(true)}
+                style={{ padding: "5px 10px", borderRadius: "8px", background: "oklch(0.28 0.08 22 / 0.2)", border: "1px solid oklch(0.5 0.12 22 / 0.4)", color: "var(--coral)", fontSize: "11px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+              >
+                Clear
+              </button>
+            )
           )}
         </div>
       </div>

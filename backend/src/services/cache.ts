@@ -1,48 +1,31 @@
-import Redis from 'ioredis';
 import dotenv from 'dotenv';
-
 dotenv.config();
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+// Use @upstash/redis (HTTP) when UPSTASH_REDIS_REST_URL is set (production/serverless),
+// otherwise use ioredis with a local Redis server.
+const useUpstash = !!process.env.UPSTASH_REDIS_REST_URL;
 
-// Create Redis client with retry strategy
-const redis = new Redis(REDIS_URL, {
-  maxRetriesPerRequest: 3,
-  retryStrategy: (times) => {
-    const delay = Math.min(times * 50, 2000);
-    return delay;
-  },
-  reconnectOnError: (err) => {
-    const targetError = 'READONLY';
-    if (err.message.includes(targetError)) {
-      // Only reconnect when the error contains "READONLY"
-      return true;
-    }
-    return false;
-  },
-  enableReadyCheck: true,
-  enableOfflineQueue: true,
-});
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let redis: any;
 
-redis.on('connect', () => {
-  console.log('✅ Redis connected');
-});
+if (useUpstash) {
+  const { Redis } = require('@upstash/redis');
+  redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+} else {
+  const IoRedis = require('ioredis');
+  redis = new IoRedis(process.env.REDIS_URL || 'redis://localhost:6379', {
+    maxRetriesPerRequest: 3,
+    retryStrategy: (times: number) => Math.min(times * 50, 2000),
+    enableReadyCheck: true,
+    enableOfflineQueue: true,
+  });
+  redis.on('error', (err: Error) => console.error('❌ Redis error:', err.message));
+  redis.on('connect', () => console.log('✅ Redis connected'));
+}
 
-redis.on('error', (err) => {
-  console.error('❌ Redis error:', err.message);
-});
-
-redis.on('ready', () => {
-  console.log('✅ Redis ready');
-});
-
-redis.on('reconnecting', () => {
-  console.log('⚠️  Redis reconnecting...');
-});
-
-/**
- * Cache TTL constants (in seconds)
- */
 export const CACHE_TTL = {
   OVERPASS: 3600,           // 1 hour
   NOMINATIM: 86400,         // 24 hours
@@ -54,61 +37,45 @@ export const CACHE_TTL = {
   AI_CITY_INSIGHTS: 604800, // 7 days
 };
 
-/**
- * Generate cache key with prefix
- */
 function getCacheKey(prefix: string, ...parts: string[]): string {
   return `wandrmark:${prefix}:${parts.join(':')}`;
 }
 
-/**
- * Generate geographic grid-based cache key for POI queries
- * This ensures that nearby requests share the same cache entry
- * regardless of small coordinate differences
- */
 export function getGridCacheKey(
   lat: number,
   lng: number,
   radius: number,
   categories: string[]
 ): string {
-  // 1 degree latitude ~ 111 km
   const metersPerDegree = 111_000;
-  const gridSize = radius / metersPerDegree; // grid cell size in degrees
-
+  const gridSize = radius / metersPerDegree;
   const gridLat = Math.floor(lat / gridSize) * gridSize;
   const gridLng = Math.floor(lng / gridSize) * gridSize;
-
   const sortedCategories = [...categories].sort().join('-');
-
   return `wandrmark:overpass:grid:${gridLat.toFixed(5)}:${gridLng.toFixed(5)}:${radius}:${sortedCategories}`;
 }
 
-
-/**
- * Get cached data
- */
 export async function getCache<T>(key: string): Promise<T | null> {
   try {
     const data = await redis.get(key);
-    if (!data) return null;
-    return JSON.parse(data) as T;
+    if (data === null || data === undefined) return null;
+    // ioredis returns raw strings; @upstash/redis auto-parses JSON
+    return useUpstash ? (data as T) : (JSON.parse(data) as T);
   } catch (err) {
     console.error(`Cache get error for key ${key}:`, err);
     return null;
   }
 }
 
-/**
- * Set cached data with TTL
- */
 export async function setCache(
   key: string,
-  data: any,
+  data: unknown,
   ttl: number = CACHE_TTL.OVERPASS
 ): Promise<boolean> {
   try {
-    await redis.setex(key, ttl, JSON.stringify(data));
+    // ioredis requires a string; @upstash/redis handles objects directly
+    const value = useUpstash ? data : JSON.stringify(data);
+    await redis.setex(key, ttl, value);
     return true;
   } catch (err) {
     console.error(`Cache set error for key ${key}:`, err);
@@ -116,9 +83,6 @@ export async function setCache(
   }
 }
 
-/**
- * Delete cached data
- */
 export async function deleteCache(key: string): Promise<boolean> {
   try {
     await redis.del(key);
@@ -129,9 +93,6 @@ export async function deleteCache(key: string): Promise<boolean> {
   }
 }
 
-/**
- * Delete multiple keys by pattern
- */
 export async function deleteCachePattern(pattern: string): Promise<number> {
   try {
     const keys = await redis.keys(pattern);
@@ -160,32 +121,24 @@ export const CacheKeys = {
     getCacheKey("ai", "city-insights", cityName.split(",")[0].toLowerCase().trim()),
 };
 
-/**
- * Acquire a Redis lock (SET NX). Returns true if the lock was granted.
- * Used to prevent cache stampedes: only the first request fetches; others wait.
- */
 export async function acquireLock(key: string, ttlSeconds = 30): Promise<boolean> {
   try {
-    const result = await redis.set(`${key}:lock`, '1', 'EX', ttlSeconds, 'NX');
+    const lockKey = `${key}:lock`;
+    const result = useUpstash
+      ? await redis.set(lockKey, '1', { ex: ttlSeconds, nx: true })
+      : await redis.set(lockKey, '1', 'EX', ttlSeconds, 'NX');
     return result === 'OK';
   } catch {
     return false;
   }
 }
 
-/**
- * Release a previously acquired lock.
- */
 export async function releaseLock(key: string): Promise<void> {
   try {
     await redis.del(`${key}:lock`);
   } catch {}
 }
 
-/**
- * Increment the miss counter for a cache key.
- * Counter expires after 30 days so unused keys don't accumulate.
- */
 export async function trackMiss(cacheKey: string): Promise<void> {
   try {
     const missKey = `wandrmark:miss:${cacheKey}`;
@@ -194,22 +147,15 @@ export async function trackMiss(cacheKey: string): Promise<void> {
   } catch {}
 }
 
-/**
- * Return the miss count for a cache key (0 if not tracked yet).
- */
 export async function getMissCount(cacheKey: string): Promise<number> {
   try {
     const val = await redis.get(`wandrmark:miss:${cacheKey}`);
-    return val ? parseInt(val, 10) : 0;
+    return val !== null ? Number(val) : 0;
   } catch {
     return 0;
   }
 }
 
-/**
- * Return the remaining TTL in seconds for a key.
- * Redis returns -1 (no expiry) or -2 (key not found).
- */
 export async function getCacheTTL(key: string): Promise<number> {
   try {
     return await redis.ttl(key);
@@ -218,9 +164,6 @@ export async function getCacheTTL(key: string): Promise<number> {
   }
 }
 
-/**
- * Health check
- */
 export async function checkRedisHealth(): Promise<boolean> {
   try {
     const result = await redis.ping();

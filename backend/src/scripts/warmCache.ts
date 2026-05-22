@@ -308,18 +308,17 @@ function delay(ms: number): Promise<void> {
 async function saveFailedCities(): Promise<void> {
   if (failedCities.length === 0) return;
 
-  const fs = require('fs');
-  const path = require('path');
-
-  const failedFile = path.join(__dirname, '../../data/failed_cities.json');
-  fs.mkdirSync(path.dirname(failedFile), { recursive: true });
-  const data = {
-    timestamp: new Date().toISOString(),
-    failures: failedCities
-  };
-
-  fs.writeFileSync(failedFile, JSON.stringify(data, null, 2));
-  console.log(`\n💾 Saved ${failedCities.length} failed cities to ${failedFile}`);
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const failedFile = path.join(__dirname, '../../data/failed_cities.json');
+    fs.mkdirSync(path.dirname(failedFile), { recursive: true });
+    fs.writeFileSync(failedFile, JSON.stringify({ timestamp: new Date().toISOString(), failures: failedCities }, null, 2));
+    console.log(`\n💾 Saved ${failedCities.length} failed cities to ${failedFile}`);
+  } catch {
+    // Filesystem may be read-only in serverless environments — log to console instead
+    console.warn(`\n⚠️  Failed cities (${failedCities.length}):`, failedCities.map(f => f.name).join(', '));
+  }
 }
 
 /**
@@ -461,8 +460,7 @@ export async function clearCache(): Promise<void> {
 }
 
 async function shutdown() {
-  await redis.quit(); // or .disconnect() depending on your Redis client version
-  console.log('🔌 Redis connection closed.');
+  // HTTP-based client — no persistent connection to close
 }
 
 /**

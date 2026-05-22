@@ -5,6 +5,17 @@ import { warmMajorCities } from "../scripts/warmCache";
 
 const router = Router();
 
+function checkWarmSecret(req: Request, res: Response): boolean {
+  const secret = process.env.CACHE_WARM_SECRET;
+  if (!secret) return true; // not configured — allow (dev mode)
+  const provided = req.headers["x-cache-secret"];
+  if (provided !== secret) {
+    res.status(401).json({ error: "Invalid or missing x-cache-secret header" });
+    return false;
+  }
+  return true;
+}
+
 router.get("/health", async (_req: Request, res: Response) => {
   try {
     const healthy = await checkRedisHealth();
@@ -18,6 +29,8 @@ router.get("/health", async (_req: Request, res: Response) => {
 });
 
 router.post("/warm", async (req: Request, res: Response) => {
+  if (!checkWarmSecret(req, res)) return;
+
   try {
     const { mode = "top", cities, skipExisting = false } = req.body;
     const targetCities: string[] | undefined = Array.isArray(cities) ? cities : undefined;
@@ -28,7 +41,7 @@ router.post("/warm", async (req: Request, res: Response) => {
       if (mode === "geocoding") {
         await warmGeocodingCache(targetCities);
       } else {
-        await warmMajorCities(targetCities, { skipExisting });
+        await warmMajorCities(targetCities, { skipExisting, saveFailures: false });
       }
     };
 
@@ -39,6 +52,8 @@ router.post("/warm", async (req: Request, res: Response) => {
 });
 
 router.delete("/clear", async (req: Request, res: Response) => {
+  if (!checkWarmSecret(req, res)) return;
+
   try {
     const { pattern } = req.query;
     const key = pattern && typeof pattern === "string" ? `wandrmark:${pattern}:*` : "wandrmark:*";

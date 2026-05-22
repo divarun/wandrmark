@@ -5,6 +5,9 @@ import { CATEGORY_CONFIG } from "@/utils/constants";
 import { useFavorites } from "@/hooks/useFavorites";
 import { aiApi } from "@/services/api";
 
+type AiTips = { description: string; tips: string[]; localInsights: string };
+const aiTipsCache = new Map<string, AiTips>();
+
 interface POIDetailCardProps {
   poi: POI;
   onClose: () => void;
@@ -14,7 +17,7 @@ interface POIDetailCardProps {
 export default function POIDetailCard({ poi, onClose, onAddToPlanner }: POIDetailCardProps) {
   const cfg = CATEGORY_CONFIG[poi.category];
   const { isFavorite, addFavorite, removeFavorite } = useFavorites();
-  const [aiTips, setAiTips] = useState<{ description: string; tips: string[]; localInsights: string } | null>(null);
+  const [aiTips, setAiTips] = useState<AiTips | null>(() => aiTipsCache.get(poi.id) ?? null);
   const [loadingTips, setLoadingTips] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const fav = isFavorite(poi.id);
@@ -25,6 +28,8 @@ export default function POIDetailCard({ poi, onClose, onAddToPlanner }: POIDetai
 
   const fetchTips = async () => {
     if (aiTips) { setAiTips(null); return; }
+    const cached = aiTipsCache.get(poi.id);
+    if (cached) { setAiTips(cached); return; }
     setLoadingTips(true);
     setAiError(null);
     try {
@@ -33,6 +38,7 @@ export default function POIDetailCard({ poi, onClose, onAddToPlanner }: POIDetai
         category: poi.category,
         address: poi.address,
       });
+      aiTipsCache.set(poi.id, result);
       setAiTips(result);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI service unavailable");

@@ -7,7 +7,6 @@ import { checkRedisHealth } from "./services/cache";
 import aiRoutes from "./routes/ai";
 import proxyRoutes from "./routes/proxy";
 import cacheRoutes from "./routes/cache";
-import { startCacheWarmer } from "./scheduler";
 import swaggerRouter from "./swagger";
 
 dotenv.config();
@@ -108,18 +107,13 @@ async function start() {
   console.log(`\n🚀 Wandrmark Backend starting on port ${PORT}…`);
 
   const redisHealth = await checkRedisHealth();
-  if (redisHealth) {
-    console.log("✅ Redis connected.");
-    startCacheWarmer();
-  } else {
-    console.warn("⚠️  Redis unavailable — caching disabled.");
-  }
+  console.log(redisHealth ? "✅ Redis connected." : "⚠️  Redis unavailable — caching disabled.");
 
   httpServer = app.listen(Number(PORT), () => {
     const nimKey = process.env.NVIDIA_API_KEY ? "configured" : "NOT SET — AI disabled";
     console.log(`✅ Server at http://localhost:${PORT}/api`);
     console.log(`   NIM: ${process.env.NIM_MODEL || "meta/llama-3.1-8b-instruct"} (${nimKey})`);
-    console.log(`   Redis: ${process.env.REDIS_URL || "redis://localhost:6379"}\n`);
+    console.log(`   Cache: warm via POST /api/cache/warm\n`);
   });
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));

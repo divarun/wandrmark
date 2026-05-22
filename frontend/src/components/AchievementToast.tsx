@@ -4,7 +4,7 @@ import { Achievement, Badge, Stamp, ExplorerTitle } from "@/types/gamification";
 
 interface ToastNotification {
   id: string;
-  type: "achievement" | "badge" | "stamp" | "levelUp" | "xp";
+  type: "achievement" | "badge" | "stamp" | "levelUp" | "xp" | "info";
   data: any;
 }
 
@@ -46,6 +46,16 @@ export function showLevelUpToast(newLevel: number, newTitle: ExplorerTitle) {
     id: `levelup_${Date.now()}_${Math.random()}`,
     type: "levelUp",
     data: { level: newLevel, title: newTitle },
+  };
+  toastQueue.push(toast);
+  notifyListeners.forEach((fn) => fn());
+}
+
+export function showInfoToast(message: string, icon = "ℹ️") {
+  const toast: ToastNotification = {
+    id: `info_${Date.now()}_${Math.random()}`,
+    type: "info",
+    data: { message, icon },
   };
   toastQueue.push(toast);
   notifyListeners.forEach((fn) => fn());
@@ -97,7 +107,7 @@ function ToastItem({ toast, onRemove }: { toast: ToastNotification; onRemove: ()
     const timer = setTimeout(() => {
       setIsExiting(true);
       setTimeout(onRemove, 300);
-    }, toast.type === "xp" ? 2000 : 4000);
+    }, toast.type === "xp" || toast.type === "info" ? 2000 : 4000);
 
     return () => clearTimeout(timer);
   }, [onRemove, toast.type]);
@@ -114,6 +124,8 @@ function ToastItem({ toast, onRemove }: { toast: ToastNotification; onRemove: ()
         return <LevelUpContent level={toast.data.level} title={toast.data.title} />;
       case "xp":
         return <XPContent xp={toast.data.xp} />;
+      case "info":
+        return <InfoContent message={toast.data.message} icon={toast.data.icon} />;
       default:
         return null;
     }
@@ -287,6 +299,17 @@ function XPContent({ xp }: { xp: number }) {
       <div className="flex items-center justify-center gap-2">
         <span className="text-2xl">✨</span>
         <p className="text-white font-bold text-base">+{xp} XP</p>
+      </div>
+    </div>
+  );
+}
+
+function InfoContent({ message, icon }: { message: string; icon: string }) {
+  return (
+    <div className="bg-slate-800/95 border border-white/[0.12] rounded-xl px-4 py-2.5 shadow-2xl backdrop-blur-sm min-w-[220px] animate-slide-up">
+      <div className="flex items-center gap-2.5">
+        <span className="text-base flex-shrink-0">{icon}</span>
+        <p className="text-slate-200 text-sm">{message}</p>
       </div>
     </div>
   );
