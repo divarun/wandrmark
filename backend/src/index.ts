@@ -120,6 +120,9 @@ async function start() {
   process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-start();
+// In Vercel serverless the module is imported — only start the HTTP server when run directly.
+if (require.main === module) {
+  start();
+}
 
 export default app;
