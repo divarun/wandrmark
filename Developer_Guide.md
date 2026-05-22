@@ -282,12 +282,16 @@ wandrmark_visited_pois: ["poi-id-1", "poi-id-2", ...]
 │  ┌──────────────────── Routes ──────────────────┐  │
 │  │ • /api/proxy/overpass      - POI proxy       │  │
 │  │ • /api/proxy/nominatim     - Geocoding proxy │  │
+│  │ • /api/proxy/osrm          - Routing proxy   │  │
 │  │ • /api/ai/recommendations  - AI suggestions  │  │
 │  │ • /api/ai/travel-tips      - POI tips        │  │
 │  │ • /api/ai/city-insights    - City facts/hist │  │
 │  │ • /api/ai/neighborhood-fact - Stamp facts    │  │
 │  │ • /api/ai/historical-context - POI history   │  │
 │  │ • /api/ai/city-summary     - Trip summary    │  │
+│  │ • /api/ai/usage            - NIM usage stats │  │
+│  │ • /api/cache/*             - Cache mgmt      │  │
+│  │ • /api/feedback/*          - Bug reports/stars│  │
 │  └──────────────────────────────────────────────┘  │
 │                                                     │
 │  ┌──────────────── Services ────────────────────┐  │
@@ -372,7 +376,11 @@ wandrmark_visited_pois: ["poi-id-1", "poi-id-2", ...]
 
 ## API Reference
 
+> Full interactive docs: **`GET /api/docs`** (Swagger UI, protected by `x-cache-secret` in production).
+
 ### AI Endpoints (`/api/ai/*`)
+
+Rate limit: 15 req / 15 min per IP.
 
 | Endpoint | Input | Cache TTL | Description |
 |---|---|---|---|
@@ -382,22 +390,46 @@ wandrmark_visited_pois: ["poi-id-1", "poi-id-2", ...]
 | `POST /neighborhood-fact` | `neighborhood`, `city` | 7 days | Engaging fact for stamp collection |
 | `POST /historical-context` | `name`, `category`, `address` | 7 days | 2-3 sentence historical background for a POI |
 | `POST /city-summary` | `cityName`, `neighborhoodsVisited[]`, `poisVisited` | 1 hr | Personalized trip summary |
+| `GET /usage` | — | — | NIM call counts & estimated token usage (per-endpoint + daily) |
 
 ### Proxy Endpoints (`/api/proxy/*`)
+
+Rate limit: 30 req / min per IP.
 
 | Endpoint | Cache TTL | Description |
 |---|---|---|
 | `POST /overpass` | 1 hr | POI data via grid-based spatial cache keys |
 | `GET /nominatim/search` | 24 hrs | Forward geocoding |
 | `GET /nominatim/reverse` | 24 hrs | Reverse geocoding |
+| `GET /osrm/route?profile=&coordinates=` | 1 hr | Route calculation; profiles: `foot`, `bike`, `car` |
 
-### Cache Warming (`/api/cache/*`)
+### Cache Management (`/api/cache/*`)
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /health` | — | Redis health check |
+| `POST /warm` | `x-cache-secret` | Trigger manual cache warm (`mode`: top / all / geocoding) |
+| `DELETE /clear` | `x-cache-secret` | Flush cache keys matching pattern |
+| `GET /stats` | — | Key counts by namespace (overpass / nominatim / ai) |
+| `GET /usage` | `x-cache-secret` | Request counts per IP per day |
+| `GET /usage/:ip` | `x-cache-secret` | Request counts for a single IP |
+
+### Feedback (`/api/feedback/*`)
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /stats` | — | Aggregate counts: `{ stars, bugReports }` (O(1), no data fetch) |
+| `POST /bug` | — | Submit a bug report (5 req/hr rate limit) |
+| `GET /bugs` | `x-cache-secret` | List all bug reports |
+| `GET /star` | — | Get total star count + whether caller IP has starred |
+| `POST /star` | — | Toggle star for caller IP |
+
+### Top-level
 
 | Endpoint | Description |
 |---|---|
-| `GET /health` | Redis + NIM status |
-| `POST /warm` | Trigger manual cache warm |
-| `DELETE /clear` | Flush all cache keys |
+| `GET /api/health` | Server health: Redis status, NIM config |
+| `GET /api/docs` | Swagger UI (protected in production) |
 
 ---
 
@@ -487,14 +519,22 @@ Backend checks Redis
 
 ### Routing
 ```
-Frontend → Direct to OSRM (no backend proxy)
-GET http://router.project-osrm.org/route/v1/foot/
-    2.3522,48.8566;2.2945,48.8584
-    ?overview=full&geometries=geojson
+Frontend → GET /api/proxy/osrm/route?profile=foot&coordinates=2.3522,48.8566;2.2945,48.8584
   ↓
-OSRM returns route with geometry
-  ↓
-Frontend converts [lng,lat] → {lat,lng}
+Backend checks Redis (TTL: 1 hr)
+  ├─ Hit: Return cached
+  └─ Miss:
+      ↓
+  GET http://router.project-osrm.org/route/v1/foot/{coordinates}
+      ?overview=full&geometries=geojson
+      ↓
+  OSRM returns route with geometry
+      ↓
+  Save to Redis (TTL: 1 hr)
+      ↓
+  Return to frontend
+      ↓
+Frontend converts GeoJSON [lng,lat] → LatLng {lat,lng}
 ```
 
 ---
@@ -651,12 +691,16 @@ wandrmark/
 ├── backend/
 │   ├── src/
 │   │   ├── routes/
-│   │   │   ├── proxy.ts              # API proxies (Overpass + Nominatim)
-│   │   │   ├── ai.ts                 # All AI endpoints incl. city-insights
-│   │   │   └── cache.ts              # Cache management endpoints
+│   │   │   ├── proxy.ts              # API proxies (Overpass + Nominatim + OSRM)
+│   │   │   ├── ai.ts                 # All AI endpoints incl. city-insights + usage
+│   │   │   ├── cache.ts              # Cache management endpoints
+│   │   │   └── feedback.ts           # Bug reports and star ratings
 │   │   ├── services/
 │   │   │   ├── cache.ts              # Redis wrapper + CacheKeys + TTLs
-│   │   │   └── nim.ts                # NVIDIA NIM AI integration
+│   │   │   ├── nim.ts                # NVIDIA NIM AI integration
+│   │   │   ├── nimUsage.ts           # NIM call tracking (Redis counters)
+│   │   │   ├── usage.ts              # Per-IP request tracking
+│   │   │   └── feedback.ts           # Bug report + star storage
 │   │   ├── scripts/
 │   │   │   ├── warmCache.ts          # Cache warming orchestrator (3 steps)
 │   │   │   └── warmGeocoding.ts      # Nominatim geocoding warmer

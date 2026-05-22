@@ -13,8 +13,9 @@ const spec = {
   tags: [
     { name: "Health", description: "Server status" },
     { name: "AI", description: "NVIDIA NIM — recommendations, tips, contextual facts" },
-    { name: "Proxy", description: "Overpass & Nominatim, Redis-cached" },
+    { name: "Proxy", description: "Overpass, Nominatim & OSRM, Redis-cached" },
     { name: "Cache", description: "Redis cache management" },
+    { name: "Feedback", description: "Bug reports and star ratings" },
   ],
 
   paths: {
@@ -70,6 +71,7 @@ const spec = {
                     minItems: 1,
                   },
                   userPreferences: { type: "string", example: "I love street food and hidden gems" },
+                  mood: { type: "string", example: "adventurous", description: "Current travel mood (optional)" },
                 },
               },
             },
@@ -273,6 +275,77 @@ const spec = {
       },
     },
 
+    "/ai/city-insights": {
+      post: {
+        tags: ["AI"],
+        summary: "City insights",
+        description:
+          "Returns an overview, highlights, historical fact, and local tip for a city. Cache key normalises to the city part only (before the first comma), cached 7 days. Pre-warmed by the weekly cron for ~200 major cities.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["cityName"],
+                properties: {
+                  cityName: { type: "string", example: "Paris, France" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "City insights",
+            content: {
+              "application/json": {
+                example: {
+                  overview: "Paris is the capital and most populous city of France…",
+                  highlights: ["Eiffel Tower", "Louvre Museum", "Seine River"],
+                  historicalFact: "Paris was founded around 250 BC by the Celtic Parisii tribe.",
+                  localTip: "Avoid tourist traps on the Champs-Élysées — head to Le Marais instead.",
+                  cached: true,
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "503": { $ref: "#/components/responses/AIUnavailable" },
+        },
+      },
+    },
+
+    "/ai/usage": {
+      get: {
+        tags: ["AI"],
+        summary: "NIM usage statistics",
+        description:
+          "Returns total NVIDIA NIM API call counts and estimated token usage, broken down by endpoint and by day. Requires Redis — returns zeros when Redis is unavailable.",
+        responses: {
+          "200": {
+            description: "Usage stats",
+            content: {
+              "application/json": {
+                example: {
+                  totalCalls: 1240,
+                  estimatedTokens: 248000,
+                  byEndpoint: {
+                    "city-insights": { calls: 400, estimatedTokens: 80000 },
+                    "travel-tips": { calls: 300, estimatedTokens: 60000 },
+                  },
+                  daily: [
+                    { date: "2025-05-20", calls: { "city-insights": 12 }, total: 12 },
+                  ],
+                },
+              },
+            },
+          },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
     // ── Proxy ─────────────────────────────────────────────────────────────────
 
     "/proxy/overpass": {
@@ -359,6 +432,53 @@ const spec = {
               },
             },
           },
+          "503": { $ref: "#/components/responses/ProxyUnavailable" },
+        },
+      },
+    },
+
+    "/proxy/osrm/route": {
+      get: {
+        tags: ["Proxy"],
+        summary: "Route calculation (OSRM)",
+        description:
+          "Proxies a route request to OSRM. Returns a route with full GeoJSON geometry. Cached in Redis (1 h). Allowed profiles: foot, bike, car. Coordinates must be two or more `lng,lat` pairs separated by semicolons.",
+        parameters: [
+          {
+            name: "profile",
+            in: "query",
+            required: true,
+            schema: { type: "string", enum: ["foot", "bike", "car"] },
+            example: "foot",
+          },
+          {
+            name: "coordinates",
+            in: "query",
+            required: true,
+            schema: { type: "string" },
+            description: "Semicolon-separated `lng,lat` pairs",
+            example: "2.3522,48.8566;2.2945,48.8584",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "OSRM route response",
+            content: {
+              "application/json": {
+                example: {
+                  code: "Ok",
+                  routes: [
+                    {
+                      distance: 5432.1,
+                      duration: 3912.4,
+                      geometry: { type: "LineString", coordinates: [[2.3522, 48.8566]] },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
           "503": { $ref: "#/components/responses/ProxyUnavailable" },
         },
       },
@@ -466,6 +586,167 @@ const spec = {
                 example: { total: 310, breakdown: { overpass: 250, nominatim: 45, ai: 15 } },
               },
             },
+          },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
+    "/cache/usage": {
+      get: {
+        tags: ["Cache"],
+        summary: "All-IP request usage",
+        description: "Returns request counts per IP, per day. Requires `x-cache-secret` header.",
+        parameters: [
+          { name: "x-cache-secret", in: "header", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "Usage data for all tracked IPs",
+            content: {
+              "application/json": {
+                example: {
+                  count: 2,
+                  ips: [
+                    {
+                      ip: "1.2.3.4",
+                      totalCalls: 42,
+                      days: [{ date: "2025-05-20", calls: { "GET:/api/proxy/nominatim/search": 10 }, total: 10 }],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid secret", content: { "application/json": { example: { error: "Invalid or missing x-cache-secret header" } } } },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
+    "/cache/usage/{ip}": {
+      get: {
+        tags: ["Cache"],
+        summary: "Single-IP request usage",
+        description: "Returns request counts for one IP address, per day. Requires `x-cache-secret` header.",
+        parameters: [
+          { name: "ip", in: "path", required: true, schema: { type: "string" }, example: "1.2.3.4" },
+          { name: "x-cache-secret", in: "header", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "Usage data for the specified IP",
+            content: {
+              "application/json": {
+                example: {
+                  ip: "1.2.3.4",
+                  totalCalls: 42,
+                  days: [{ date: "2025-05-20", calls: { "GET:/api/proxy/nominatim/search": 10 }, total: 10 }],
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid secret", content: { "application/json": { example: { error: "Invalid or missing x-cache-secret header" } } } },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
+    // ── Feedback ──────────────────────────────────────────────────────────────
+
+    "/feedback/bug": {
+      post: {
+        tags: ["Feedback"],
+        summary: "Submit a bug report",
+        description: "Stores a bug report message tied to the caller's IP. Rate limited to 5 requests per hour per IP.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["message"],
+                properties: {
+                  message: { type: "string", minLength: 10, maxLength: 1000, example: "The map doesn't load on mobile Safari." },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Report submitted",
+            content: { "application/json": { example: { success: true, id: "1716220800000-abc12" } } },
+          },
+          "400": { description: "Message too short or too long", content: { "application/json": { example: { error: "Message must be 10–1000 characters." } } } },
+          "429": { description: "Rate limit reached", content: { "application/json": { example: { error: "Too many bug reports. Please wait before submitting again." } } } },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
+    "/feedback/bugs": {
+      get: {
+        tags: ["Feedback"],
+        summary: "List all bug reports (admin)",
+        description: "Returns all stored bug reports. Requires `x-cache-secret` header.",
+        parameters: [
+          { name: "x-cache-secret", in: "header", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "Bug reports",
+            content: {
+              "application/json": {
+                example: {
+                  count: 1,
+                  reports: [{ id: "1716220800000-abc12", ip: "1.2.3.4", message: "Map doesn't load.", ts: "2025-05-20T12:00:00.000Z" }],
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid secret", content: { "application/json": { example: { error: "Invalid or missing x-cache-secret header" } } } },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
+    "/feedback/stats": {
+      get: {
+        tags: ["Feedback"],
+        summary: "Aggregate feedback stats",
+        description: "Returns total star count and total bug report count. Uses O(1) Redis commands — does not fetch full report data.",
+        responses: {
+          "200": {
+            description: "Feedback stats",
+            content: { "application/json": { example: { stars: 47, bugReports: 12 } } },
+          },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
+    "/feedback/star": {
+      get: {
+        tags: ["Feedback"],
+        summary: "Get star count",
+        description: "Returns total star count and whether the caller's IP has starred the app.",
+        responses: {
+          "200": {
+            description: "Star status",
+            content: { "application/json": { example: { total: 47, starred: false } } },
+          },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+      post: {
+        tags: ["Feedback"],
+        summary: "Toggle star",
+        description: "Toggles the star for the caller's IP (adds if not starred, removes if already starred). Returns the new state.",
+        responses: {
+          "200": {
+            description: "Updated star status",
+            content: { "application/json": { example: { total: 48, starred: true } } },
           },
           "500": { $ref: "#/components/responses/InternalError" },
         },

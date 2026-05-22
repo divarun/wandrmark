@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { submitBug, getBugReports, toggleStar, getStarStatus } from "../services/feedback";
+import { submitBug, getBugReports, toggleStar, getStarStatus, getFeedbackStats } from "../services/feedback";
 
 const router = Router();
 
@@ -81,6 +81,16 @@ router.get("/star", async (req: Request, res: Response) => {
     res.json(result);
   } catch {
     res.status(500).json({ error: "Failed to get star status." });
+  }
+});
+
+// GET /feedback/stats — open, aggregate counts (no full data fetch)
+router.get("/stats", async (_req: Request, res: Response) => {
+  try {
+    const stats = await getFeedbackStats();
+    res.json(stats);
+  } catch {
+    res.status(500).json({ error: "Failed to get feedback stats." });
   }
 });
 

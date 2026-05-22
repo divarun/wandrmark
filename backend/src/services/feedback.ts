@@ -53,3 +53,11 @@ export async function getStarStatus(ip: string): Promise<{ total: number; starre
   ]);
   return { total: total as number, starred: !!isMember };
 }
+
+export async function getFeedbackStats(): Promise<{ stars: number; bugReports: number }> {
+  const [stars, bugReports] = await Promise.all([
+    redis.scard(STARS_KEY),
+    redis.llen(BUGS_KEY),
+  ]);
+  return { stars: stars as number, bugReports: bugReports as number };
+}
