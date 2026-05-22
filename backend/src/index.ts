@@ -10,6 +10,7 @@ import aiRoutes from "./routes/ai";
 import proxyRoutes from "./routes/proxy";
 import cacheRoutes from "./routes/cache";
 import feedbackRoutes from "./routes/feedback";
+import analyticsRoutes from "./routes/analytics";
 import swaggerRouter from "./swagger";
 
 dotenv.config();
@@ -130,6 +131,7 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/proxy", proxyRoutes);
 app.use("/api/cache", cacheRoutes);
 app.use("/api/feedback", feedbackRoutes);
+app.use("/api/analytics", analyticsRoutes);
 app.use("/api/docs", (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const secret = process.env.CACHE_WARM_SECRET;
   if (!secret || isWhitelistedIP(req)) return next();

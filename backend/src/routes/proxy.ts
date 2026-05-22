@@ -3,6 +3,7 @@ import {
   getCache, setCache, CACHE_TTL, getGridCacheKey,
   acquireLock, releaseLock, trackMiss, getCacheTTL,
 } from "../services/cache";
+import { trackGeocodeSearch, trackOverpassCategories, trackTransportMode } from "../services/analytics";
 import crypto from "crypto";
 
 const router = Router();
@@ -191,6 +192,16 @@ function setCacheHeaders(res: Response, ttl: number): void {
   res.set("Cache-Control", `public, max-age=${ttl}, stale-while-revalidate=${ttl * 8}`);
 }
 
+function parseOverpassCategories(query: string): string[] {
+  const categories: string[] = [];
+  if (/node\["amenity"="restaurant"\]/.test(query))                        categories.push("restaurant");
+  if (/node\["amenity"="cafe"\]/.test(query))                              categories.push("cafe");
+  if (/node\["tourism"="museum"\]|way\["tourism"="museum"\]/.test(query))  categories.push("museum");
+  if (/node\["leisure"="park"\]|way\["leisure"="park"\]/.test(query))      categories.push("park");
+  if (/node\["tourism"="attraction"\]|node\["tourism"="viewpoint"\]|node\["tourism"="artwork"\]|node\["historic"|node\["amenity"="theatre"\]/.test(query)) categories.push("attraction");
+  return categories.sort();
+}
+
 function extractGridCacheKey(query: string): string | null {
   try {
     const m = query.match(/around:\s*(\d+)\s*,\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
@@ -200,15 +211,7 @@ function extractGridCacheKey(query: string): string | null {
     const lat    = Number(m[2]);
     const lng    = Number(m[3]);
 
-    const categories: string[] = [];
-    if (/node\["amenity"="restaurant"\]/.test(query))                        categories.push("restaurant");
-    if (/node\["amenity"="cafe"\]/.test(query))                              categories.push("cafe");
-    if (/node\["tourism"="museum"\]|way\["tourism"="museum"\]/.test(query))  categories.push("museum");
-    if (/node\["leisure"="park"\]|way\["leisure"="park"\]/.test(query))      categories.push("park");
-    if (/node\["tourism"="attraction"\]|node\["tourism"="viewpoint"\]|node\["tourism"="artwork"\]|node\["historic"|node\["amenity"="theatre"\]/.test(query)) categories.push("attraction");
-    categories.sort();
-
-    return getGridCacheKey(lat, lng, radius, categories);
+    return getGridCacheKey(lat, lng, radius, parseOverpassCategories(query));
   } catch {
     return null;
   }
@@ -226,6 +229,7 @@ router.post("/overpass", async (req: Request, res: Response) => {
 
     const fallbackHash = crypto.createHash("md5").update(query).digest("hex");
     const cacheKey = extractGridCacheKey(query) || getCacheKey("overpass", fallbackHash);
+    trackOverpassCategories(parseOverpassCategories(query)).catch(() => {});
 
     const result = await fetchWithCache(
       cacheKey,
@@ -256,6 +260,7 @@ router.get("/nominatim/search", async (req: Request, res: Response) => {
   try {
     const paramsString = new URLSearchParams(req.query as Record<string, string>).toString();
     const cacheKey = getCacheKey("nominatim", "search", paramsString);
+    if (typeof req.query.q === "string") trackGeocodeSearch(req.query.q).catch(() => {});
 
     const result = await fetchWithCache(
       cacheKey,
@@ -323,6 +328,7 @@ router.get("/osrm/route", async (req: Request, res: Response) => {
     if (!ALLOWED_PROFILES.includes(profile)) {
       return res.status(400).json({ error: "Invalid profile" });
     }
+    trackTransportMode(profile).catch(() => {});
 
     // Validate format: at least two lng,lat pairs separated by semicolons — prevents SSRF path injection
     if (!/^-?\d+\.?\d*,-?\d+\.?\d*(;-?\d+\.?\d*,-?\d+\.?\d*)+$/.test(coordinates)) {

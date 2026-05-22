@@ -3,6 +3,7 @@ import { z } from "zod";
 import { generateRecommendations, generateTravelTips, generateNeighborhoodFact, generateCitySummary, generateHistoricalContext, generateCityInsights } from "../services/nim";
 import { getCache, setCache, CACHE_TTL, CacheKeys } from "../services/cache";
 import { getNimUsage } from "../services/nimUsage";
+import { trackCityInsight } from "../services/analytics";
 
 const router = Router();
 
@@ -199,6 +200,7 @@ router.post("/city-insights", async (req: Request, res: Response) => {
   if (!parsed.success) { validationError(res, parsed.error); return; }
 
   const { cityName } = parsed.data;
+  trackCityInsight(cityName).catch(() => {});
   try {
     const cacheKey = CacheKeys.aiCityInsights(cityName);
     const cached = await getCache(cacheKey);

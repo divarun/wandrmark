@@ -16,6 +16,7 @@ const spec = {
     { name: "Proxy", description: "Overpass, Nominatim & OSRM, Redis-cached" },
     { name: "Cache", description: "Redis cache management" },
     { name: "Feedback", description: "Bug reports and star ratings" },
+    { name: "Analytics", description: "Usage analytics — top cities, search trends, POI categories, transport modes" },
   ],
 
   paths: {
@@ -706,6 +707,39 @@ const spec = {
             },
           },
           "401": { description: "Missing or invalid secret", content: { "application/json": { example: { error: "Invalid or missing x-cache-secret header" } } } },
+          "500": { $ref: "#/components/responses/InternalError" },
+        },
+      },
+    },
+
+    "/analytics/stats": {
+      get: {
+        tags: ["Analytics"],
+        summary: "Usage analytics",
+        description: "Returns top searched cities (city-insights requests), top geocode queries, POI category breakdown, transport mode breakdown, and daily activity counts. All counters are permanent (no TTL).",
+        responses: {
+          "200": {
+            description: "Analytics snapshot",
+            content: {
+              "application/json": {
+                example: {
+                  topCities: [
+                    { name: "Paris", count: 145 },
+                    { name: "Tokyo", count: 98 },
+                  ],
+                  topSearches: [
+                    { name: "paris", count: 200 },
+                    { name: "new york", count: 160 },
+                  ],
+                  categories: { restaurant: 1200, cafe: 800, attraction: 650, park: 400, museum: 300 },
+                  transport: { foot: 450, bike: 120, car: 85 },
+                  daily: [
+                    { date: "2025-05-20", cityInsights: 12, geocodeSearches: 45, overpassQueries: 30, routes: 8 },
+                  ],
+                },
+              },
+            },
+          },
           "500": { $ref: "#/components/responses/InternalError" },
         },
       },

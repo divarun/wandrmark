@@ -414,6 +414,20 @@ Rate limit: 30 req / min per IP.
 | `GET /usage` | `x-cache-secret` | Request counts per IP per day |
 | `GET /usage/:ip` | `x-cache-secret` | Request counts for a single IP |
 
+### Analytics (`/api/analytics/*`)
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /stats` | — | Top cities (city-insights), top geocode searches, POI category counts, transport mode counts, daily activity |
+
+What's tracked (fire-and-forget, zero latency impact):
+- **City insights** (`POST /ai/city-insights`) → city name added to `cities` sorted set
+- **Geocode search** (`GET /proxy/nominatim/search?q=`) → query added to `searches` sorted set
+- **Overpass POI fetch** (`POST /proxy/overpass`) → categories incremented in `categories` sorted set
+- **Route request** (`GET /proxy/osrm/route`) → transport mode incremented in `transport` sorted set
+
+All counters persist in Redis sorted sets (no TTL). Daily totals are stored in a separate hash per day.
+
 ### Feedback (`/api/feedback/*`)
 
 | Endpoint | Auth | Description |
@@ -694,13 +708,15 @@ wandrmark/
 │   │   │   ├── proxy.ts              # API proxies (Overpass + Nominatim + OSRM)
 │   │   │   ├── ai.ts                 # All AI endpoints incl. city-insights + usage
 │   │   │   ├── cache.ts              # Cache management endpoints
-│   │   │   └── feedback.ts           # Bug reports and star ratings
+│   │   │   ├── feedback.ts           # Bug reports and star ratings
+│   │   │   └── analytics.ts          # Usage analytics (cities, searches, categories, transport)
 │   │   ├── services/
 │   │   │   ├── cache.ts              # Redis wrapper + CacheKeys + TTLs
 │   │   │   ├── nim.ts                # NVIDIA NIM AI integration
 │   │   │   ├── nimUsage.ts           # NIM call tracking (Redis counters)
 │   │   │   ├── usage.ts              # Per-IP request tracking
-│   │   │   └── feedback.ts           # Bug report + star storage
+│   │   │   ├── feedback.ts           # Bug report + star storage
+│   │   │   └── analytics.ts          # Analytics sorted sets + daily hashes
 │   │   ├── scripts/
 │   │   │   ├── warmCache.ts          # Cache warming orchestrator (3 steps)
 │   │   │   └── warmGeocoding.ts      # Nominatim geocoding warmer
