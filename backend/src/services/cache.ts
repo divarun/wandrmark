@@ -28,12 +28,13 @@ if (useUpstash) {
 }
 
 export const CACHE_TTL = {
-  OVERPASS: 3600,           // 1 hour
-  NOMINATIM: 86400,         // 24 hours
+  OVERPASS: 2592000,        // 30 days
+  NOMINATIM: 2592000,       // 30 days
+  OSRM: 86400,              // 1 day (road networks change rarely)
   AI_NEIGHBORHOOD: 604800,  // 7 days
-  AI_TIPS: 3600,            // 1 hour
-  AI_RECOMMENDATIONS: 1800, // 30 minutes
-  AI_CITY_SUMMARY: 3600,    // 1 hour
+  AI_TIPS: 604800,          // 7 days
+  AI_RECOMMENDATIONS: 604800, // 7 days
+  AI_CITY_SUMMARY: 604800,  // 7 days
   AI_HISTORICAL: 604800,    // 7 days
   AI_CITY_INSIGHTS: 604800, // 7 days
 };

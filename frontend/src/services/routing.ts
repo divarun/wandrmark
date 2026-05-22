@@ -1,6 +1,6 @@
 import { LatLng, TransportMode, RouteSegment, POI, OSRMRouteResponse } from "@/types";
 
-const OSRM_URL = process.env.NEXT_PUBLIC_OSRM_URL || "http://router.project-osrm.org";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
 
 const MODE_TO_PROFILE: Record<TransportMode, string> = {
   walk: "foot",
@@ -13,16 +13,6 @@ function coordsToOSRM(coords: LatLng[]): string {
   return coords.map((c) => `${c.lng},${c.lat}`).join(";");
 }
 
-function parseGeometry(encoded: string): LatLng[] {
-  // OSRM returns GeoJSON geometry when geometry=geojson
-  try {
-    const geojson = JSON.parse(encoded);
-    if (geojson.type === "LineString" && Array.isArray(geojson.coordinates)) {
-      return geojson.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng }));
-    }
-  } catch {}
-  return [];
-}
 
 export async function computeRoute(
   pois: POI[],
@@ -42,9 +32,8 @@ export async function computeRoute(
     const to = pois[i + 1];
     const coordString = coordsToOSRM([from.coordinates, to.coordinates]);
 
-    const url =
-      `${OSRM_URL}/route/v1/${profile}/${coordString}` +
-      `?overview=full&geometries=geojson&steps=false&annotations=false`;
+    const params = new URLSearchParams({ profile, coordinates: coordString });
+    const url = `${API_BASE}/proxy/osrm/route?${params}`;
 
     const response = await fetch(url, {
       headers: { Accept: "application/json" },

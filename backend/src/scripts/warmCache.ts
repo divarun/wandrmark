@@ -157,7 +157,7 @@ async function warmSingleCell(lat: number, lng: number, label: string, skipIfExi
     return false;
   }
 
-  await setCache(cacheKey, data, CACHE_TTL.OVERPASS * 14);
+  await setCache(cacheKey, data, CACHE_TTL.OVERPASS);
   console.log(`  ✅ ${label} (${lat.toFixed(4)}, ${lng.toFixed(4)}): ${data.elements.length} POIs cached`);
   return true;
 }

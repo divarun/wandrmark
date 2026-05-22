@@ -38,7 +38,6 @@ export interface Badge {
 }
 
 export type BadgeCategory =
-  | 'distance'
   | 'pois'
   | 'speed'
   | 'streak'
@@ -51,8 +50,6 @@ export interface PassportStatistics {
   citiesVisited: number;
   neighborhoodsExplored: number;
   poisVisited: number;
-  totalDistance: number; // meters
-  totalDuration: number; // minutes
   countriesExplored: number;
   routesCompleted: number;
   questsCompleted: number;
@@ -106,7 +103,6 @@ export type QuestType =
   | 'discovery'
   | 'theme'
   | 'time'
-  | 'distance'
   | 'category'
   | 'ai_generated'
   | 'seasonal';
@@ -116,7 +112,6 @@ export interface QuestRequirement {
   type:
     | 'visit_pois'
     | 'visit_categories'
-    | 'distance'
     | 'time_window'
     | 'specific_location'
     | 'complete_route';
@@ -251,7 +246,6 @@ export interface YearInReview {
   year: number;
   statistics: {
     citiesExplored: number;
-    totalDistance: number;
     poisVisited: number;
     achievementsUnlocked: number;
     questsCompleted: number;

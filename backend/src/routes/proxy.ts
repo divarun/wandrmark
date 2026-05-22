@@ -9,6 +9,7 @@ const router = Router();
 
 const OVERPASS_URL  = process.env.OVERPASS_URL  || "https://overpass-api.de/api";
 const NOMINATIM_URL = process.env.NOMINATIM_URL || "https://nominatim.openstreetmap.org";
+const OSRM_URL      = process.env.OSRM_URL      || "http://router.project-osrm.org";
 const API_TIMEOUT   = 30_000;
 const MAX_ATTEMPTS  = 2;
 const RETRY_DELAY_MS = 2_000;
@@ -306,6 +307,52 @@ router.get("/nominatim/reverse", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[PROXY] Nominatim reverse error:", err);
     return res.status(503).json({ error: "Nominatim API unavailable" });
+  }
+});
+
+// GET /proxy/osrm/route?profile=foot&coordinates=lng1,lat1;lng2,lat2
+router.get("/osrm/route", async (req: Request, res: Response) => {
+  try {
+    const { profile, coordinates } = req.query;
+
+    if (!profile || typeof profile !== "string" || !coordinates || typeof coordinates !== "string") {
+      return res.status(400).json({ error: "profile and coordinates query params are required" });
+    }
+
+    const ALLOWED_PROFILES = ["foot", "bike", "car"];
+    if (!ALLOWED_PROFILES.includes(profile)) {
+      return res.status(400).json({ error: "Invalid profile" });
+    }
+
+    // Validate format: at least two lng,lat pairs separated by semicolons — prevents SSRF path injection
+    if (!/^-?\d+\.?\d*,-?\d+\.?\d*(;-?\d+\.?\d*,-?\d+\.?\d*)+$/.test(coordinates)) {
+      return res.status(400).json({ error: "Invalid coordinates format" });
+    }
+
+    const cacheKey = getCacheKey("osrm", profile, crypto.createHash("md5").update(coordinates).digest("hex"));
+
+    const result = await fetchWithCache(
+      cacheKey,
+      {
+        url: `${OSRM_URL}/route/v1/${profile}/${coordinates}?overview=full&geometries=geojson&steps=false&annotations=false`,
+        headers: { Accept: "application/json" },
+      },
+      (d) => {
+        const data = d as Record<string, unknown>;
+        return data?.code === "Ok" && Array.isArray(data?.routes) && (data.routes as unknown[]).length > 0;
+      },
+      CACHE_TTL.OSRM,
+      "OSRM routing timeout"
+    );
+
+    if (result.data !== null && result.data !== undefined) {
+      setCacheHeaders(res, CACHE_TTL.OSRM);
+      return res.json(result.data);
+    }
+    return res.status(result.httpStatus ?? 503).json({ error: result.error ?? "OSRM routing error" });
+  } catch (err) {
+    console.error("[PROXY] OSRM error:", err);
+    return res.status(503).json({ error: "OSRM routing unavailable" });
   }
 });
 

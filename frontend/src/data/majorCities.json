@@ -2,24 +2,34 @@
   "New York",
   "Los Angeles",
   "Chicago",
+  "Houston",
+  "Philadelphia",
   "San Francisco",
-  "San Jose",
+  "Miami",
+  "Dallas",
+  "Atlanta",
+  "San Diego",
+  "Phoenix",
+  "Denver",
+  "Portland",
+  "Las Vegas",
+  "New Orleans",
   "Seattle",
   "Boston",
   "Washington",
-  "Philadelphia",
-  "Miami",
-  "Orlando",
-  "Atlanta",
-  "Dallas",
-  "Houston",
   "Austin",
-  "Denver",
-  "Phoenix",
-  "Las Vegas",
-  "San Diego",
-  "Portland",
-
+  "Nashville",
+  "Minneapolis",
+  "Orlando",
+  "San Jose",
+  "San Antonio",
+  "Detroit",
+  "Baltimore",
+  "Tampa",
+  "Charlotte",
+  "Pittsburgh",
+  "Kansas City",
+  "Sacramento",
 
   "Toronto",
   "Vancouver",
@@ -27,35 +37,21 @@
   "Calgary",
   "Ottawa",
 
-
   "London",
-  "Manchester",
-  "Birmingham",
-  "Liverpool",
   "Edinburgh",
-  "Glasgow",
-
 
   "Paris",
-  "Marseille",
-  "Lyon",
   "Nice",
-  "Toulouse",
-
+  "Lyon",
 
   "Berlin",
   "Munich",
   "Hamburg",
-  "Frankfurt",
-  "Cologne",
-
 
   "Madrid",
   "Barcelona",
-  "Valencia",
   "Seville",
-  "Malaga",
-
+  "Granada",
 
   "Rome",
   "Milan",
@@ -63,34 +59,22 @@
   "Venice",
   "Naples",
 
-
   "Amsterdam",
-  "Rotterdam",
-  "The Hague",
-  "Utrecht",
-
 
   "Zurich",
   "Geneva",
-  "Basel",
 
   "Vienna",
   "Salzburg",
 
   "Brussels",
-  "Antwerp",
-  "Ghent",
+  "Bruges",
 
   "Stockholm",
-  "Gothenburg",
-  "Malmo",
-
   "Copenhagen",
-
   "Oslo",
-  "Bergen",
-
   "Helsinki",
+  "Reykjavik",
 
   "Dublin",
 
@@ -98,7 +82,6 @@
   "Porto",
 
   "Athens",
-  "Thessaloniki",
 
   "Prague",
 
@@ -107,9 +90,10 @@
   "Warsaw",
   "Krakow",
 
+  "Dubrovnik",
+  "Zagreb",
+
   "Istanbul",
-  "Ankara",
-  "Izmir",
 
   "Moscow",
   "Saint Petersburg",
@@ -117,66 +101,73 @@
   "Tokyo",
   "Osaka",
   "Kyoto",
-  "Yokohama",
-  "Nagoya",
-  "Fukuoka",
-  "Sapporo",
+  "Hiroshima",
 
   "Seoul",
   "Busan",
-  "Incheon",
 
   "Beijing",
   "Shanghai",
-  "Shenzhen",
-  "Guangzhou",
   "Hong Kong",
+  "Chengdu",
+
+  "Taipei",
 
   "Singapore",
 
   "Bangkok",
   "Chiang Mai",
-  "Phuket",
+
+  "Kuala Lumpur",
+
+  "Manila",
+
+  "Ho Chi Minh City",
+  "Hanoi",
 
   "Delhi",
   "Mumbai",
-  "Bangalore",
-  "Chennai",
-  "Hyderabad",
-  "Kolkata",
+  "Jaipur",
+  "Goa",
+
+  "Kathmandu",
 
   "Dubai",
-  "Abu Dhabi",
 
   "Tel Aviv",
   "Jerusalem",
 
+  "Cairo",
+  "Marrakech",
+
+  "Cape Town",
+  "Johannesburg",
+
+  "Nairobi",
+
   "Sydney",
   "Melbourne",
   "Brisbane",
-  "Perth",
-  "Adelaide",
 
   "Auckland",
-  "Wellington",
+  "Queenstown",
 
   "São Paulo",
   "Rio de Janeiro",
-  "Belo Horizonte",
 
   "Mexico City",
-  "Guadalajara",
-  "Monterrey",
+  "Cancún",
 
   "Buenos Aires",
 
-  "Santiago",
-
   "Bogotá",
   "Medellín",
+  "Cartagena",
 
   "Lima",
+  "Cusco",
 
-  "Cape Town",
-  "Johannesburg"
+  "Santiago",
+
+  "Havana"
 ]

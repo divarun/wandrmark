@@ -58,10 +58,6 @@ const STAT_ROWS: { key: keyof ReturnType<typeof getStats>; label: string; unit?:
     icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><rect x="2" y="14" width="6" height="8"/><rect x="9" y="10" width="6" height="12"/><rect x="16" y="5" width="6" height="17"/></svg>,
   },
   {
-    key: "distance", label: "Distance walked", unit: "km", color: "#5fe3ff", bg: "rgba(95,227,255,0.10)",
-    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
-  },
-  {
     key: "quests", label: "Quests done", color: "#5cdb95", bg: "rgba(92,219,149,0.10)",
     icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
   },
@@ -71,14 +67,13 @@ const STAT_ROWS: { key: keyof ReturnType<typeof getStats>; label: string; unit?:
   },
 ];
 
-function getStats(statistics: { poisVisited: number; citiesVisited: number; totalDistance: number; questsCompleted: number; currentStreak: number }, stampsLen: number) {
+function getStats(statistics: { poisVisited: number; citiesVisited: number; questsCompleted: number; currentStreak: number }, stampsLen: number) {
   return {
-    stamps:   stampsLen,
-    pois:     statistics.poisVisited,
-    cities:   statistics.citiesVisited,
-    distance: +(statistics.totalDistance / 1000).toFixed(1),
-    quests:   statistics.questsCompleted,
-    streak:   statistics.currentStreak,
+    stamps: stampsLen,
+    pois:   statistics.poisVisited,
+    cities: statistics.citiesVisited,
+    quests: statistics.questsCompleted,
+    streak: statistics.currentStreak,
   };
 }
 
@@ -322,7 +317,6 @@ export default function PassportPanel() {
                   { emoji: "👣", name: "First Steps",    desc: "Visit 1 place",    xp: "+10" },
                   { emoji: "🗺️", name: "Explorer Fifty", desc: "Visit 50 places",  xp: "+200" },
                   { emoji: "💯", name: "Century Club",   desc: "Visit 100 places", xp: "+500" },
-                  { emoji: "🏃", name: "Marathon Walker",desc: "Walk 42 km total", xp: "+500" },
                 ].map(({ emoji, name, desc, xp }) => (
                   <div key={name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line)" }}>
                     <span style={{ fontSize: "15px", flexShrink: 0 }}>{emoji}</span>
@@ -628,26 +622,29 @@ export default function PassportPanel() {
         )}
 
         {/* Action row */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {/* Star button */}
           <button
             onClick={handleStar}
             disabled={starBusy}
             aria-label={starred ? "Remove star" : "Star this app"}
             style={{
-              appearance: "none", border: "none", background: "transparent",
+              appearance: "none",
               cursor: starBusy ? "default" : "pointer",
-              display: "inline-flex", alignItems: "center", gap: "5px",
-              color: starred ? "#ffd05a" : "var(--ink-4)",
-              fontSize: "11.5px", fontFamily: "var(--font)", fontWeight: starred ? 600 : 400,
-              padding: "4px 6px", borderRadius: "6px",
-              transition: "color 0.15s ease",
+              display: "inline-flex", alignItems: "center", gap: "6px",
+              color: starred ? "#ffd05a" : "rgba(255, 208, 90, 0.75)",
+              fontSize: "12px", fontFamily: "var(--font)", fontWeight: 500,
+              padding: "6px 11px", borderRadius: "8px",
+              background: starred ? "rgba(255, 208, 90, 0.12)" : "rgba(255, 208, 90, 0.06)",
+              border: starred ? "1px solid rgba(255, 208, 90, 0.4)" : "1px solid rgba(255, 208, 90, 0.2)",
+              transition: "all 0.15s ease",
+              flex: 1,
             }}
           >
             <svg
               width="13" height="13" viewBox="0 0 24 24"
               fill={starred ? "#ffd05a" : "none"}
-              stroke={starred ? "#ffd05a" : "currentColor"}
+              stroke={starred ? "#ffd05a" : "rgba(255, 208, 90, 0.75)"}
               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
               style={{ flexShrink: 0, transition: "fill 0.15s ease, stroke 0.15s ease" }}
             >
@@ -663,15 +660,18 @@ export default function PassportPanel() {
           <button
             onClick={() => { setBugOpen((v) => !v); setBugDone(false); }}
             style={{
-              appearance: "none", border: "none", background: "transparent",
-              cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "5px",
-              color: bugOpen ? "var(--coral)" : "var(--ink-5)",
-              fontSize: "11px", fontFamily: "var(--font)",
-              padding: "4px 6px", borderRadius: "6px",
-              transition: "color 0.12s ease",
+              appearance: "none",
+              cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px",
+              color: bugOpen ? "var(--coral)" : "rgba(255, 107, 111, 0.7)",
+              fontSize: "12px", fontFamily: "var(--font)", fontWeight: 500,
+              padding: "6px 11px", borderRadius: "8px",
+              background: bugOpen ? "rgba(255, 107, 111, 0.1)" : "rgba(255, 107, 111, 0.05)",
+              border: bugOpen ? "1px solid rgba(255, 107, 111, 0.35)" : "1px solid rgba(255, 107, 111, 0.2)",
+              transition: "all 0.12s ease",
+              flex: 1, justifyContent: "center",
             }}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
               <line x1="12" y1="8" x2="12" y2="12"/>
               <line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -756,9 +756,16 @@ function QuestCard({ quest }: { quest: Quest }) {
         <div style={{ height: "100%", width: `${quest.progress}%`, background: "linear-gradient(90deg, var(--cyan-2), #5cdb95)", borderRadius: "3px" }} />
       </div>
       {quest.requirements.map((req) => (
-        <div key={req.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--ink-3)", letterSpacing: "0.04em" }}>{req.description}</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--ink)" }}>{req.current}/{req.target}</span>
+        <div key={req.id}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--ink-3)", letterSpacing: "0.04em" }}>{req.description}</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--ink)" }}>{req.current}/{req.target}</span>
+          </div>
+          {req.type === "visit_categories" && req.current < req.target && req.details?.emoji && (
+            <p style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-5)", letterSpacing: "0.03em", marginBottom: "3px" }}>
+              {req.details.emoji} Tap any {req.details?.category} marker on the map
+            </p>
+          )}
         </div>
       ))}
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)", fontFamily: "var(--mono)", fontSize: "9.5px" }}>

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { submitBug, getBugReports, toggleStar, getStarStatus } from "../services/feedback";
 
@@ -26,12 +27,20 @@ function checkSecret(req: Request, res: Response): boolean {
   return true;
 }
 
+const bugLimiter = rateLimit({
+  windowMs: 3_600_000, // 1 hour
+  max: 5,
+  message: { error: "Too many bug reports. Please wait before submitting again." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const BugSchema = z.object({
   message: z.string().min(10).max(1000).trim(),
 });
 
-// POST /feedback/bug — open (anyone can submit)
-router.post("/bug", async (req: Request, res: Response) => {
+// POST /feedback/bug — open (anyone can submit), tight rate limit
+router.post("/bug", bugLimiter, async (req: Request, res: Response) => {
   const parsed = BugSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Message must be 10–1000 characters." });

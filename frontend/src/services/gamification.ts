@@ -35,26 +35,6 @@ const BASE_URL =
 
 export const ACHIEVEMENT_LIBRARY: Achievement[] = [
   {
-    id: "marathon_walker",
-    name: "Marathon Walker",
-    description: "Walk 26.2 miles in total",
-    category: "distance",
-    iconEmoji: "🏃",
-    requirement: { type: "distance_walked", target: 42195 },
-    reward: { xp: 500 },
-    tier: "gold",
-  },
-  {
-    id: "century_cyclist",
-    name: "Century Cyclist",
-    description: "Cycle 100 miles in total",
-    category: "distance",
-    iconEmoji: "🚴",
-    requirement: { type: "distance_cycled", target: 160934 },
-    reward: { xp: 750 },
-    tier: "platinum",
-  },
-  {
     id: "first_steps",
     name: "First Steps",
     description: "Visit your first POI",
@@ -132,17 +112,17 @@ function generateCategoryQuest(cityName: string): Quest {
   return {
     id: `category_${pick.category}_${Date.now()}`,
     title: `${pick.emoji} ${label} Seeker`,
-    description: `Discover 2 ${pick.category}s in ${cityName}`,
+    description: `Find a ${pick.category} in ${cityName} and tap it on the map to visit`,
     type: "category",
-    difficulty: "medium",
+    difficulty: "easy",
     requirements: [
       {
         id: "req_cat",
         type: "visit_categories",
-        target: 2,
+        target: 1,
         current: 0,
-        details: { category: pick.category },
-        description: `Visit 2 ${pick.category}s`,
+        details: { category: pick.category, emoji: pick.emoji },
+        description: `Visit 1 ${pick.category}`,
       },
     ],
     reward: { xp: 75 },
@@ -177,24 +157,32 @@ const XP_RARITY_MULTIPLIER: Record<string, number> = {
    RARITY CALCULATION
 ============================================ */
 
+function normalize(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
 function calculateStampRarity(
   cityName: string,
   neighborhoodName: string,
   countryCode: string
 ): "common" | "rare" | "legendary" {
-  const city = cityName.toLowerCase();
-  const neighborhood = neighborhoodName.toLowerCase();
+  const city = normalize(cityName);
+  const neighborhood = normalize(neighborhoodName);
 
-  if (!MAJOR_CITIES.some(c => city.includes(c.toLowerCase()))) {
-    return "legendary";
-  }
+  // Word-boundary match: avoid "Washington" matching "Port Washington" or "Washington Township"
+  const matchedCity = MAJOR_CITIES.find(c => {
+    const nc = normalize(c);
+    const idx = city.indexOf(nc);
+    if (idx === -1) return false;
+    const before = city[idx - 1];
+    const after = city[idx + nc.length];
+    return (!before || /\W/.test(before)) && (!after || /\W/.test(after));
+  });
+  if (!matchedCity) return "legendary";
 
-  const isMajorCity = MAJOR_CITIES.some(c => city.includes(c.toLowerCase()));
-  const isHotspot = TOURIST_HOTSPOTS.some(h =>
-    neighborhood.includes(h.toLowerCase())
-  );
+  const hotspots = (TOURIST_HOTSPOTS as Record<string, string[]>)[matchedCity];
+  if (hotspots?.some(h => neighborhood.includes(normalize(h)))) return "common";
 
-  if (isMajorCity && isHotspot) return "common";
   return "rare";
 }
 
@@ -266,10 +254,7 @@ class GamificationService {
     if (typeof window !== "undefined") {
       localStorage.setItem(STORAGE_KEY_TRIP_HISTORY, JSON.stringify(this.tripHistory));
     }
-    if (this.progress && data.distance > 0) {
-      this.progress.passport.statistics.totalDistance += data.distance;
-      this.saveProgress();
-    }
+    this.saveProgress();
   }
 
   /* ---------- COUNTRY DETECTION ---------- */
@@ -531,11 +516,6 @@ class GamificationService {
         case "pois_visited":
           met = stats.poisVisited >= achievement.requirement.target;
           break;
-        case "distance_walked":
-          met = stats.totalDistance >= achievement.requirement.target;
-          break;
-        case "distance_cycled":
-          break;
       }
 
       if (met) {
@@ -617,8 +597,6 @@ class GamificationService {
           citiesVisited: 0,
           neighborhoodsExplored: 0,
           poisVisited: 0,
-          totalDistance: 0,
-          totalDuration: 0,
           countriesExplored: 0,
           routesCompleted: 0,
           questsCompleted: 0,
