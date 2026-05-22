@@ -156,6 +156,24 @@ function generateCategoryQuest(cityName: string): Quest {
 }
 
 /* ============================================
+   XP CONSTANTS
+============================================ */
+
+const XP_BY_CATEGORY: Record<string, number> = {
+  restaurant: 10,
+  cafe: 8,
+  attraction: 25,
+  museum: 25,
+  park: 12,
+};
+
+const XP_RARITY_MULTIPLIER: Record<string, number> = {
+  common: 1,
+  rare: 1.5,
+  legendary: 3,
+};
+
+/* ============================================
    RARITY CALCULATION
 ============================================ */
 
@@ -369,9 +387,11 @@ class GamificationService {
 
     const stats = this.progress.passport.statistics;
     stats.poisVisited++;
-    stats.lastActiveDate = new Date();
+    this.updateStreak(stats);
 
-    const xpGained = 10;
+    const baseXP = XP_BY_CATEGORY[poi.category] ?? 10;
+    const rarityMultiplier = stamp ? (XP_RARITY_MULTIPLIER[stamp.rarity] ?? 1) : 1;
+    const xpGained = Math.round(baseXP * rarityMultiplier);
     const level = this.progress.passport.level;
     let newXP = level.xp + xpGained;
 
@@ -528,18 +548,55 @@ class GamificationService {
     return newAchievements;
   }
 
+  /* ---------- STREAK TRACKING ---------- */
+
+  private updateStreak(stats: { currentStreak: number; longestStreak: number; lastActiveDate: Date }): void {
+    const now = new Date();
+    const lastActive = new Date(stats.lastActiveDate);
+    const daysDiff = Math.floor((now.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysDiff === 1) {
+      stats.currentStreak++;
+      if (stats.currentStreak > stats.longestStreak) stats.longestStreak = stats.currentStreak;
+    } else if (daysDiff > 1) {
+      stats.currentStreak = 1;
+    }
+    // daysDiff === 0: same day, no change to streak
+
+    stats.lastActiveDate = now;
+  }
+
   /* ---------- MYSTERY BOX GENERATION ---------- */
 
   private generateMysteryBox(): MysteryBox {
+    const roll = Math.random();
+    let rarity: MysteryBox["rarity"];
+    let xpBonus: number;
+    let content: string;
+    let type: MysteryBox["reward"]["type"];
+
+    if (roll < 0.60) {
+      rarity = "common"; xpBonus = 5; type = "fact";
+      content = "A fascinating local secret about your neighborhood awaits!";
+    } else if (roll < 0.88) {
+      rarity = "rare"; xpBonus = 20; type = "insight";
+      content = "Hidden gems nearby — explore the side streets for authentic local culture.";
+    } else if (roll < 0.98) {
+      rarity = "epic"; xpBonus = 50; type = "ai_story";
+      content = "An epic discovery awaits! You've uncovered something special in this area.";
+    } else {
+      rarity = "legendary"; xpBonus = 150; type = "custom_guide";
+      content = "Legendary find! You've become a true local expert of this district.";
+    }
+
+    this.applyXP(xpBonus);
+
     return {
       id: `box_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      rarity: "rare",
+      rarity,
       earnedAt: new Date(),
       opened: false,
-      reward: {
-        type: "fact",
-        content: "A fascinating local secret about your neighborhood awaits!",
-      },
+      reward: { type, content },
     };
   }
 

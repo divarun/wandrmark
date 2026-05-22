@@ -1,10 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { POI, TransportMode, RouteSegment, Itinerary, Route } from "@/types";
 import { TRANSPORT_MODES } from "@/utils/constants";
 import { formatDistance, formatDuration } from "@/services/routing";
 import { exportItineraryJSON, exportItineraryPDF } from "@/utils/export";
 import { localItineraries } from "@/services/localStorage";
+import { aiApi } from "@/services/api";
 
 interface PlannerSidebarProps {
   plannerPois: POI[];
@@ -22,7 +23,17 @@ interface PlannerSidebarProps {
   onSaveItinerary?: (itinerary: Itinerary) => void;
 }
 
-export default function PlannerSidebar({
+function extractCityName(pois: POI[]): string {
+  if (pois.length === 0) return "Your Trip";
+  const parts = pois[0].address.split(",");
+  return parts[parts.length >= 3 ? parts.length - 2 : 0]?.trim() || "Your Trip";
+}
+
+function extractNeighborhoods(pois: POI[]): string[] {
+  return [...new Set(pois.map(p => p.address.split(",")[0]?.trim()).filter(Boolean))];
+}
+
+function PlannerSidebarInner({
   plannerPois,
   transportMode,
   onModeChange,
@@ -44,6 +55,8 @@ export default function PlannerSidebar({
   const [copied, setCopied] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [tripStory, setTripStory] = useState<string | null>(null);
+  const [tripStoryLoading, setTripStoryLoading] = useState(false);
 
   useEffect(() => {
     setSavedItineraries(localItineraries.getAll());
@@ -68,13 +81,29 @@ export default function PlannerSidebar({
     };
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const itinerary = buildItinerary();
     localItineraries.add(itinerary);
     setSavedItineraries(localItineraries.getAll());
     onSaveItinerary?.(itinerary);
     setJustSaved(true);
     setTimeout(() => setJustSaved(false), 2000);
+
+    // Generate AI trip story in background — non-blocking
+    if (plannerPois.length >= 2) {
+      setTripStory(null);
+      setTripStoryLoading(true);
+      try {
+        const cityName = extractCityName(plannerPois);
+        const neighborhoods = extractNeighborhoods(plannerPois);
+        const result = await aiApi.getCitySummary(cityName, neighborhoods, plannerPois.length);
+        setTripStory(result.summary);
+      } catch {
+        // AI summary is optional — fail silently
+      } finally {
+        setTripStoryLoading(false);
+      }
+    }
   };
 
   const handleDeleteSaved = (id: string) => {
@@ -110,30 +139,25 @@ export default function PlannerSidebar({
                 <button
                   key={tm.id}
                   onClick={() => onModeChange(tm.id)}
+                  aria-selected={isActive}
                   title={tm.label}
-                  style={isActive ? {
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                    padding: "10px 6px 8px",
-                    background: "linear-gradient(180deg, oklch(0.32 0.10 70 / 0.7), oklch(0.24 0.08 70 / 0.7))",
-                    border: "1px solid oklch(0.6 0.14 70)",
-                    borderRadius: "12px",
-                    color: "var(--amber)",
-                    boxShadow: "0 6px 14px -6px oklch(0.6 0.14 70 / 0.5)",
-                    cursor: "pointer", transition: "all 150ms ease",
-                  } : {
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                    padding: "10px 6px 8px",
-                    background: "var(--panel)", border: "1px solid var(--line)",
-                    borderRadius: "12px", color: "var(--ink-2)",
-                    cursor: "pointer", transition: "all 150ms ease",
+                  style={{
+                    appearance: "none", cursor: "pointer",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: "5px",
+                    padding: "11px 6px 9px",
+                    border: `1px solid ${isActive ? "rgba(255,161,74,0.45)" : "var(--line-2)"}`,
+                    borderRadius: "11px",
+                    color: isActive ? "var(--orange)" : "var(--ink-3)",
+                    background: isActive
+                      ? "linear-gradient(180deg, rgba(255,161,74,0.12), rgba(255,161,74,0.02))"
+                      : "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))",
+                    boxShadow: isActive ? "inset 0 0 0 1px rgba(255,161,74,0.22), 0 0 16px rgba(255,161,74,0.10)" : "none",
+                    transition: "all 0.12s ease",
                   }}
                 >
-                  <span style={{ fontSize: "15px" }}>{tm.emoji}</span>
-                  <span style={{
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    fontSize: "11.5px", fontWeight: 600, letterSpacing: "-0.005em",
-                  }}>
-                    {tm.label.slice(0, 4)}
+                  <span style={{ fontSize: "16px", lineHeight: 1 }}>{tm.emoji}</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.08em", textTransform: "uppercase", color: isActive ? "var(--orange)" : "var(--ink-4)" }}>
+                    {tm.label.slice(0, 5)}
                   </span>
                 </button>
               );
@@ -172,28 +196,23 @@ export default function PlannerSidebar({
       <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
         {plannerPois.length === 0 && (
           <div style={{
-            margin: "8px 4px 8px",
-            padding: "28px 18px",
-            border: "1.5px dashed var(--line-2)",
-            borderRadius: "16px",
+            margin: "4px 0 12px",
+            padding: "30px 18px 26px",
+            border: "1px dashed var(--line-3)",
+            borderRadius: "14px",
             textAlign: "center",
-            background: "oklch(0.20 0.03 250 / 0.4)",
-            display: "flex", flexDirection: "column", alignItems: "center", gap: "6px",
+            background: "repeating-linear-gradient(135deg, rgba(255,255,255,0.012) 0 6px, transparent 6px 12px), linear-gradient(180deg, rgba(255,107,111,0.04), transparent 70%)",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: "4px",
           }}>
-            <div style={{
-              width: "52px", height: "52px", borderRadius: "14px",
-              display: "grid", placeItems: "center",
-              background: "linear-gradient(180deg, oklch(0.32 0.10 22 / 0.5), oklch(0.22 0.06 22 / 0.5))",
-              border: "1px solid oklch(0.5 0.14 22 / 0.4)",
-              color: "var(--coral)", marginBottom: "6px", fontSize: "24px",
-            }}>
-              📍
+            <div style={{ position: "relative", width: "48px", height: "48px", borderRadius: "50%", display: "inline-grid", placeItems: "center", background: "radial-gradient(circle at 50% 40%, rgba(255,107,111,0.18), rgba(255,107,111,0))", color: "var(--coral)", marginBottom: "8px" }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "1px solid rgba(255,107,111,0.35)", animation: "ping 2.4s ease-out infinite" }} />
             </div>
-            <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "16px", fontWeight: 700, color: "var(--ink)", letterSpacing: "-0.01em" }}>
-              No stops yet
-            </p>
-            <p style={{ fontSize: "12px", color: "var(--ink-3)" }}>
-              Tap <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "10px", padding: "1px 6px", background: "var(--card)", border: "1px solid var(--line)", borderRadius: "5px", color: "var(--ink-2)" }}>+</span> on any place to add it
+            <p style={{ fontWeight: 600, fontSize: "13.5px", color: "var(--ink)", letterSpacing: "-0.005em" }}>No stops yet</p>
+            <p style={{ fontSize: "11.5px", color: "var(--ink-4)", lineHeight: 1.5 }}>
+              Tap <kbd style={{ display: "inline-grid", placeItems: "center", background: "rgba(95,227,255,0.12)", border: "1px solid rgba(95,227,255,0.3)", color: "var(--cyan)", fontFamily: "var(--mono)", fontSize: "10px", padding: "2px 5px", borderRadius: "4px", margin: "0 1px" }}>+</kbd> on any place to add it
             </p>
           </div>
         )}
@@ -368,9 +387,31 @@ export default function PlannerSidebar({
                 Export PDF
               </button>
             </div>
+
+            {/* AI Trip Story */}
+            {(tripStoryLoading || tripStory) && (
+              <div style={{ borderRadius: "12px", border: "1px solid oklch(0.4 0.10 295 / 0.35)", background: "oklch(0.22 0.04 295 / 0.4)", padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "12px" }}>✨</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--orchid)" }}>Trip Story</span>
+                </div>
+                {tripStoryLoading ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                    <div className="skeleton" style={{ height: "8px", borderRadius: "99px", width: "100%" }} />
+                    <div className="skeleton" style={{ height: "8px", borderRadius: "99px", width: "80%" }} />
+                    <div className="skeleton" style={{ height: "8px", borderRadius: "99px", width: "90%" }} />
+                  </div>
+                ) : (
+                  <p style={{ fontSize: "11.5px", color: "var(--ink-2)", lineHeight: 1.6 }}>{tripStory}</p>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
     </div>
   );
 }
+
+const PlannerSidebar = memo(PlannerSidebarInner);
+export default PlannerSidebar;

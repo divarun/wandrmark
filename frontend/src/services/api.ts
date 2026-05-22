@@ -55,4 +55,32 @@ export const aiApi = {
       body: JSON.stringify({ cityName }),
     });
   },
+
+  async getCitySummary(
+    cityName: string,
+    neighborhoodsVisited: string[],
+    poisVisited: number
+  ): Promise<{ summary: string }> {
+    return request("/ai/city-summary", {
+      method: "POST",
+      body: JSON.stringify({ cityName, neighborhoodsVisited, poisVisited }),
+    });
+  },
+};
+
+export const feedbackApi = {
+  async getStarStatus(): Promise<{ total: number; starred: boolean }> {
+    return request("/feedback/star");
+  },
+
+  async toggleStar(): Promise<{ total: number; starred: boolean }> {
+    return request("/feedback/star", { method: "POST" });
+  },
+
+  async submitBug(message: string): Promise<{ success: boolean; id: string }> {
+    return request("/feedback/bug", {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+  },
 };

@@ -22,9 +22,29 @@ const COOLDOWN_AFTER_429 = 2000;
 
 const reverseGeocodeCache = new Map<string, string>();
 
+interface NominatimItem {
+  place_id: string;
+  display_name: string;
+  lat: string;
+  lon: string;
+  type?: string;
+  category?: string;
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    hamlet?: string;
+    suburb?: string;
+    state?: string;
+    county?: string;
+    country?: string;
+  };
+}
+
 export async function geocodeSearch(
   query: string,
-  limit: number = 5
+  limit: number = 5,
+  signal?: AbortSignal
 ): Promise<GeocodingResult[]> {
   const now = Date.now();
   if (!query.trim() || now - last429Time < COOLDOWN_AFTER_429) return [];
@@ -40,6 +60,7 @@ export async function geocodeSearch(
 
     const response = await fetch(`${BASE_URL}/proxy/nominatim/search?${params}`, {
       headers: { "Content-Type": "application/json" },
+      signal,
     });
 
     if (response.status === 429) {
@@ -49,9 +70,9 @@ export async function geocodeSearch(
 
     if (!response.ok) throw new Error(`Nominatim error: ${response.status}`);
 
-    const data = await response.json();
+    const data = await response.json() as NominatimItem[];
 
-    return data.map((item: any) => {
+    return data.map((item) => {
       const addr = item.address || {};
       const shortName =
         addr.city || addr.town || addr.village || addr.hamlet ||
@@ -69,7 +90,8 @@ export async function geocodeSearch(
         category: item.category || "",
       };
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return [];
     return [];
   }
 }

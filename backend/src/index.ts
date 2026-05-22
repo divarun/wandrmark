@@ -4,9 +4,11 @@ import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import http from "http";
 import { checkRedisHealth } from "./services/cache";
+import { trackRequest } from "./services/usage";
 import aiRoutes from "./routes/ai";
 import proxyRoutes from "./routes/proxy";
 import cacheRoutes from "./routes/cache";
+import feedbackRoutes from "./routes/feedback";
 import swaggerRouter from "./swagger";
 
 dotenv.config();
@@ -112,6 +114,13 @@ const aiLimiter = rateLimit({
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Usage tracking — fire-and-forget, never blocks the request
+app.use("/api/", (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  trackRequest(getClientIP(req), req.method, req.path).catch(() => {});
+  next();
+});
+
 app.use("/api/", apiLimiter);
 app.use("/api/proxy/", proxyLimiter);
 app.use("/api/ai/", aiLimiter);
@@ -119,6 +128,7 @@ app.use("/api/ai/", aiLimiter);
 app.use("/api/ai", aiRoutes);
 app.use("/api/proxy", proxyRoutes);
 app.use("/api/cache", cacheRoutes);
+app.use("/api/feedback", feedbackRoutes);
 app.use("/api/docs", swaggerRouter);
 
 app.get("/api/health", async (_req, res) => {

@@ -1,360 +1,732 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useGamification } from "@/contexts/GamificationContext";
-import { Achievement, Quest, MysteryBox, Stamp, TripMemory } from "@/types/gamification";
+import { Achievement, Quest, Stamp } from "@/types/gamification";
 import { formatDistance, formatDuration } from "@/services/routing";
+import { feedbackApi } from "@/services/api";
+
+type TabId = "stats" | "stamps" | "quests" | "badges";
+
+const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  {
+    id: "stats",
+    label: "Stats",
+    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+  },
+  {
+    id: "stamps",
+    label: "Stamps",
+    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>,
+  },
+  {
+    id: "quests",
+    label: "Quests",
+    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+  },
+  {
+    id: "badges",
+    label: "Badges",
+    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>,
+  },
+];
+
+const LEVEL_AVATAR_COLORS: Record<string, string> = {
+  Tourist:       "linear-gradient(135deg, rgba(177,150,255,0.25), rgba(95,227,255,0.15))",
+  Traveler:      "linear-gradient(135deg, rgba(92,219,149,0.25), rgba(95,227,255,0.15))",
+  Explorer:      "linear-gradient(135deg, rgba(95,227,255,0.25), rgba(177,150,255,0.15))",
+  "Local Guide": "linear-gradient(135deg, rgba(177,150,255,0.30), rgba(255,143,183,0.15))",
+  "City Expert": "linear-gradient(135deg, rgba(255,161,74,0.25), rgba(255,107,111,0.15))",
+  Legend:        "linear-gradient(135deg, rgba(255,208,90,0.30), rgba(255,107,111,0.20))",
+};
+
+const LEVEL_INITIALS: Record<string, string> = {
+  Tourist: "T", Traveler: "Tr", Explorer: "Ex",
+  "Local Guide": "LG", "City Expert": "CE", Legend: "L",
+};
+
+const STAT_ROWS: { key: keyof ReturnType<typeof getStats>; label: string; unit?: string; color: string; bg: string; icon: React.ReactNode }[] = [
+  {
+    key: "stamps", label: "Stamps collected", color: "#ffa14a", bg: "rgba(255,161,74,0.10)",
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
+  },
+  {
+    key: "pois", label: "POIs visited", color: "#ff6b6f", bg: "rgba(255,107,111,0.10)",
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 22s-7-7-7-12a7 7 0 0 1 14 0c0 5-7 12-7 12Z"/></svg>,
+  },
+  {
+    key: "cities", label: "Cities explored", color: "#b196ff", bg: "rgba(177,150,255,0.10)",
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><rect x="2" y="14" width="6" height="8"/><rect x="9" y="10" width="6" height="12"/><rect x="16" y="5" width="6" height="17"/></svg>,
+  },
+  {
+    key: "distance", label: "Distance walked", unit: "km", color: "#5fe3ff", bg: "rgba(95,227,255,0.10)",
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
+  },
+  {
+    key: "quests", label: "Quests done", color: "#5cdb95", bg: "rgba(92,219,149,0.10)",
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+  },
+  {
+    key: "streak", label: "Current streak", unit: "d", color: "#ff8a4a", bg: "rgba(255,138,74,0.10)",
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,
+  },
+];
+
+function getStats(statistics: { poisVisited: number; citiesVisited: number; totalDistance: number; questsCompleted: number; currentStreak: number }, stampsLen: number) {
+  return {
+    stamps:   stampsLen,
+    pois:     statistics.poisVisited,
+    cities:   statistics.citiesVisited,
+    distance: +(statistics.totalDistance / 1000).toFixed(1),
+    quests:   statistics.questsCompleted,
+    streak:   statistics.currentStreak,
+  };
+}
+
+const LEVEL_PROGRESSION = [
+  { title: "Tourist",      xp: 0,    color: "#b196ff", emoji: "👤", levels: "Lv 1–4" },
+  { title: "Traveler",     xp: 100,  color: "#5cdb95", emoji: "🎒", levels: "Lv 5–9" },
+  { title: "Explorer",     xp: 300,  color: "#5fe3ff", emoji: "🧭", levels: "Lv 10–14" },
+  { title: "Local Guide",  xp: 600,  color: "#b196ff", emoji: "🗺️", levels: "Lv 15–19" },
+  { title: "City Expert",  xp: 1000, color: "#ffa14a", emoji: "⭐", levels: "Lv 20–24" },
+  { title: "Legend",       xp: 2000, color: "#ffd05a", emoji: "👑", levels: "Lv 25+" },
+];
 
 export default function PassportPanel() {
-  const { progress, visitedPoiIds, openMysteryBox, tripHistory } = useGamification();
-  const [activeTab, setActiveTab] = useState<"overview" | "stamps" | "quests" | "achievements" | "mystery" | "history">("overview");
-  const [showGuide, setShowGuide] = useState(false);
+  const { progress, tripHistory } = useGamification();
+  const [activeTab, setActiveTab] = useState<TabId>("stats");
+  const [showHelp, setShowHelp] = useState(false);
 
-  if (!progress) return (
-    <div className="flex flex-col h-full items-center justify-center gap-3 p-6">
-      <div className="w-10 h-10 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-xl">📖</div>
-      <p className="text-slate-500 text-sm text-center">Your passport will appear here as you explore</p>
-    </div>
-  );
+  // Star state
+  const [starCount, setStarCount]   = useState(0);
+  const [starred, setStarred]       = useState(false);
+  const [starBusy, setStarBusy]     = useState(false);
 
-  const { passport, activeQuests, achievements, mysteryBoxes } = progress;
-  const { level, statistics, badges, stamps } = passport;
+  // Bug report state
+  const [bugOpen, setBugOpen]           = useState(false);
+  const [bugMessage, setBugMessage]     = useState("");
+  const [bugSubmitting, setBugSubmitting] = useState(false);
+  const [bugDone, setBugDone]           = useState(false);
+
+  useEffect(() => {
+    feedbackApi.getStarStatus().then(({ total, starred }) => {
+      setStarCount(total);
+      setStarred(starred);
+    }).catch(() => {});
+  }, []);
+
+  async function handleStar() {
+    if (starBusy) return;
+    setStarBusy(true);
+    try {
+      const result = await feedbackApi.toggleStar();
+      setStarCount(result.total);
+      setStarred(result.starred);
+    } catch {
+      // silently ignore — Redis may be unavailable
+    } finally {
+      setStarBusy(false);
+    }
+  }
+
+  async function handleBugSubmit() {
+    if (bugSubmitting || bugMessage.trim().length < 10) return;
+    setBugSubmitting(true);
+    try {
+      await feedbackApi.submitBug(bugMessage.trim());
+      setBugDone(true);
+      setBugMessage("");
+      setTimeout(() => { setBugDone(false); setBugOpen(false); }, 2500);
+    } catch {
+      // keep form open so user can retry
+    } finally {
+      setBugSubmitting(false);
+    }
+  }
+
+  if (!progress) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", alignItems: "center", justifyContent: "center", gap: "12px", padding: "24px" }}>
+        <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", display: "grid", placeItems: "center", fontSize: "22px" }}>📖</div>
+        <p style={{ color: "var(--ink-4)", fontSize: "12px", textAlign: "center" }}>Your passport will appear as you explore</p>
+      </div>
+    );
+  }
+
+  const { passport, activeQuests, achievements } = progress;
+  const { level, statistics, stamps } = passport;
   const xpPct = Math.min((level.xp / level.xpToNextLevel) * 100, 100);
-
-  const TABS = [
-    { id: "overview",      label: "Stats",   emoji: "📊" },
-    { id: "stamps",        label: "Stamps",  emoji: "🎫" },
-    { id: "quests",        label: "Quests",  emoji: "🎯" },
-    { id: "achievements",  label: "Badges",  emoji: "🏆" },
-    { id: "mystery",       label: "Boxes",   emoji: "🎁" },
-    { id: "history",       label: "History", emoji: "📅" },
-  ] as const;
+  const stats = getStats(statistics, stamps.length);
+  const avatarBg = LEVEL_AVATAR_COLORS[level.title] ?? LEVEL_AVATAR_COLORS.Tourist;
+  const initials = LEVEL_INITIALS[level.title] ?? "E";
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Traveler header — compact */}
-      <div
-        className="flex-shrink-0"
-        style={{ padding: "12px 16px 10px", borderBottom: "1px solid var(--line)" }}
-      >
-        <div className="flex items-center gap-3">
-          {/* Avatar */}
-          <div style={{ position: "relative", flexShrink: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+
+      {/* Profile card */}
+      <div style={{ padding: "14px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+        {/* Avatar + name row */}
+        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr auto", gap: "12px", alignItems: "start", marginBottom: "12px" }}>
+          {/* Avatar with Lv chip */}
+          <div style={{ position: "relative", width: "48px" }}>
             <div style={{
-              width: "44px", height: "44px", borderRadius: "12px",
-              background: getLevelGradientCSS(level.title),
+              width: "48px", height: "48px", borderRadius: "12px",
+              background: avatarBg,
+              border: "1px solid rgba(177,150,255,0.35)",
               display: "grid", placeItems: "center",
-              boxShadow: "0 0 0 1px oklch(1 0 0 / 0.15) inset",
-              fontSize: "20px",
+              color: "#fff", fontWeight: 600, fontSize: "16px",
+              boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04), 0 0 18px rgba(177,150,255,0.18)",
+              fontFamily: "var(--mono)",
             }}>
-              {getLevelEmoji(level.title)}
+              {initials}
             </div>
             <div style={{
-              position: "absolute", bottom: "-3px", right: "-3px",
-              width: "18px", height: "18px", borderRadius: "50%",
-              background: "linear-gradient(135deg, var(--coral), oklch(0.55 0.14 22))",
-              display: "grid", placeItems: "center",
-              color: "white", fontWeight: 800, fontSize: "9px",
-              border: "2px solid var(--bg-2)",
-              fontFamily: "'Space Grotesk', sans-serif",
+              position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: "-8px",
+              background: "var(--bg-0)", border: "1px solid var(--line-3)",
+              color: "var(--cyan)", fontFamily: "var(--mono)", fontWeight: 700, fontSize: "9px",
+              padding: "2px 5px", borderRadius: "5px", whiteSpace: "nowrap",
             }}>
-              {level.level}
+              Lv {level.level}
             </div>
           </div>
 
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
-              <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "15px", letterSpacing: "-0.01em", color: "var(--ink)" }}>
-                {level.title}
-              </p>
-              <span style={{ fontSize: "11px", color: "var(--mint)", fontWeight: 600 }}>Lv {level.level}</span>
-            </div>
-            <div className="xp-bar" style={{ marginTop: "5px" }}>
-              <div className="xp-bar-fill" style={{ width: `${xpPct}%` }} />
-            </div>
-            <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9.5px", color: "var(--ink-4)", marginTop: "3px" }}>
-              {level.xp} / {level.xpToNextLevel} XP
+          {/* Title + XP subtitle */}
+          <div style={{ paddingTop: "2px", minWidth: 0 }}>
+            <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "15px", letterSpacing: "-0.01em" }}>{level.title}</p>
+            <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", letterSpacing: "0.03em", marginTop: "4px" }}>
+              {level.xp} / {level.xpToNextLevel} XP · LVL {level.level}
             </p>
           </div>
 
+          {/* Help button */}
           <button
-            onClick={() => setShowGuide(g => !g)}
-            title="How it works"
+            onClick={() => setShowHelp((v) => !v)}
+            aria-label="How it works"
+            aria-expanded={showHelp}
             style={{
-              width: "28px", height: "28px", borderRadius: "8px", flexShrink: 0,
-              background: showGuide ? "oklch(0.32 0.06 205 / 0.3)" : "var(--panel)",
-              border: showGuide ? "1px solid oklch(0.55 0.12 205 / 0.5)" : "1px solid var(--line)",
-              color: showGuide ? "var(--cyan)" : "var(--ink-3)",
-              display: "grid", placeItems: "center", cursor: "pointer",
-              fontSize: "12px", fontWeight: 700,
+              width: "28px", height: "28px", borderRadius: "8px", cursor: "pointer", flexShrink: 0,
+              border: `1px solid ${showHelp ? "rgba(177,150,255,0.4)" : "var(--line-2)"}`,
+              background: showHelp ? "rgba(177,150,255,0.08)" : "rgba(255,255,255,0.03)",
+              color: showHelp ? "var(--orchid)" : "var(--ink-3)",
+              display: "grid", placeItems: "center", fontWeight: 700, fontSize: "12px",
+              transition: "all 0.12s ease",
             }}
           >
             ?
           </button>
         </div>
+
+        {/* XP bar row */}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px", fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.04em", color: "var(--ink-4)" }}>
+            <span>{level.title}</span>
+            <span>{level.xp}/{level.xpToNextLevel} XP</span>
+          </div>
+          <div className="xp-bar">
+            <div className="xp-bar-fill" style={{ width: `${xpPct}%` }} />
+          </div>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex flex-shrink-0 overflow-x-auto" style={{ borderBottom: "1px solid var(--line)", padding: "0 8px" }}>
-        {TABS.map((tab) => (
+      {/* Help panel — replaces tabs when open so it can scroll freely on mobile */}
+      {showHelp ? (
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          {/* Sticky header */}
+          <div style={{
+            position: "sticky", top: 0, zIndex: 2,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "10px 14px",
+            background: "linear-gradient(180deg, rgba(10,15,23,0.98), rgba(10,15,23,0.92))",
+            borderBottom: "1px solid rgba(177,150,255,0.14)",
+            backdropFilter: "blur(8px)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--orchid)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--orchid)", fontWeight: 600 }}>How it works</span>
+            </div>
+            <button
+              onClick={() => setShowHelp(false)}
+              aria-label="Close help"
+              style={{
+                width: "26px", height: "26px", borderRadius: "7px", cursor: "pointer",
+                border: "1px solid var(--line-2)", background: "rgba(255,255,255,0.03)",
+                color: "var(--ink-3)", display: "grid", placeItems: "center",
+                fontSize: "16px", lineHeight: 1, transition: "all 0.12s ease",
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          <div style={{ padding: "14px", display: "flex", flexDirection: "column", gap: "18px" }}>
+
+            {/* Earning XP */}
+            <div>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Earning XP</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                {[
+                  { label: "Visit a new place",        xp: "+10 XP", color: "#5fe3ff" },
+                  { label: "Discover a new city",       xp: "+25 XP", color: "#b196ff" },
+                  { label: "Complete a daily quest",    xp: "+50 XP", color: "#5cdb95" },
+                  { label: "Earn a neighborhood stamp", xp: "+30 XP", color: "#ffa14a" },
+                  { label: "Save a trip in Planner",    xp: "+15 XP", color: "#ff8fb7" },
+                ].map(({ label, xp, color }) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line)" }}>
+                    <span style={{ fontSize: "12px", color: "var(--ink-3)" }}>{label}</span>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color, flexShrink: 0, marginLeft: "8px" }}>{xp}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Neighborhood stamps */}
+            <div>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Neighborhood stamps</p>
+              <p style={{ fontSize: "12px", color: "var(--ink-4)", lineHeight: 1.55, marginBottom: "10px" }}>
+                Awarded when you visit enough unique places in a neighborhood. Rarity depends on where you explore.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                {[
+                  { emoji: "🎫", rarity: "Common",    desc: "Tourist hotspots in major cities",  color: "var(--ink-4)", bg: "rgba(255,255,255,0.02)", border: "var(--line)" },
+                  { emoji: "✨", rarity: "Rare",      desc: "Lesser-known neighborhoods",         color: "#b196ff",       bg: "rgba(177,150,255,0.06)", border: "rgba(177,150,255,0.22)" },
+                  { emoji: "🌟", rarity: "Legendary", desc: "Anywhere outside major cities",      color: "#ffd05a",       bg: "rgba(255,208,90,0.06)",  border: "rgba(255,208,90,0.22)" },
+                ].map(({ emoji, rarity, desc, color, bg, border }) => (
+                  <div key={rarity} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "8px", background: bg, border: `1px solid ${border}` }}>
+                    <span style={{ fontSize: "14px", flexShrink: 0 }}>{emoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", fontWeight: 600, color, letterSpacing: "0.06em", textTransform: "uppercase" }}>{rarity}</p>
+                      <p style={{ fontSize: "11.5px", color: "var(--ink-4)", marginTop: "2px" }}>{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Quests */}
+            <div>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Quests</p>
+              <div style={{ display: "flex", alignItems: "start", gap: "10px", padding: "10px 12px", borderRadius: "8px", background: "rgba(92,219,149,0.04)", border: "1px solid rgba(92,219,149,0.14)" }}>
+                <span style={{ fontSize: "17px", flexShrink: 0, marginTop: "1px" }}>🎯</span>
+                <p style={{ fontSize: "12px", color: "var(--ink-3)", lineHeight: 1.6 }}>
+                  Two daily challenges unlock when you visit your first place: a discovery quest and a category quest. Both expire at midnight.
+                </p>
+              </div>
+            </div>
+
+            {/* Achievements */}
+            <div>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Achievements</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                {[
+                  { emoji: "👣", name: "First Steps",    desc: "Visit 1 place",    xp: "+10" },
+                  { emoji: "🗺️", name: "Explorer Fifty", desc: "Visit 50 places",  xp: "+200" },
+                  { emoji: "💯", name: "Century Club",   desc: "Visit 100 places", xp: "+500" },
+                  { emoji: "🏃", name: "Marathon Walker",desc: "Walk 42 km total", xp: "+500" },
+                ].map(({ emoji, name, desc, xp }) => (
+                  <div key={name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line)" }}>
+                    <span style={{ fontSize: "15px", flexShrink: 0 }}>{emoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: "12px", color: "var(--ink-2)", fontWeight: 600 }}>{name}</p>
+                      <p style={{ fontSize: "11px", color: "var(--ink-5)", marginTop: "1px", fontFamily: "var(--mono)" }}>{desc}</p>
+                    </div>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color: "#5cdb95", flexShrink: 0 }}>{xp} XP</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Mystery Boxes */}
+            <div>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Mystery Boxes</p>
+              <div style={{ display: "flex", alignItems: "start", gap: "10px", padding: "10px 12px", borderRadius: "8px", background: "rgba(255,161,74,0.04)", border: "1px solid rgba(255,161,74,0.14)" }}>
+                <span style={{ fontSize: "17px", flexShrink: 0, marginTop: "1px" }}>📦</span>
+                <p style={{ fontSize: "12px", color: "var(--ink-3)", lineHeight: 1.6 }}>
+                  Awarded every 10 visits. Open a box to reveal a local insight about the neighborhood you just explored.
+                </p>
+              </div>
+            </div>
+
+            {/* XP & Titles */}
+            <div>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>XP & Titles</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                {LEVEL_PROGRESSION.map(({ title, xp, color, emoji, levels }) => {
+                  const isCurrent = level.title === title;
+                  return (
+                    <div key={title} style={{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "7px 10px", borderRadius: "8px",
+                      background: isCurrent ? "rgba(177,150,255,0.08)" : "rgba(255,255,255,0.01)",
+                      border: `1px solid ${isCurrent ? "rgba(177,150,255,0.25)" : "var(--line)"}`,
+                    }}>
+                      <span style={{ fontSize: "13px", flexShrink: 0 }}>{emoji}</span>
+                      <span style={{ flex: 1, fontSize: "12px", color: isCurrent ? "var(--ink)" : "var(--ink-4)", fontWeight: isCurrent ? 600 : 400 }}>{title}</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "9.5px", color: "var(--ink-5)" }}>{levels}</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: isCurrent ? color : "var(--ink-5)", fontWeight: isCurrent ? 600 : 400, minWidth: "44px", textAlign: "right" }}>
+                        {xp === 0 ? "Start" : `${xp} XP`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Trip History */}
+            <div style={{ paddingBottom: "4px" }}>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Trip History</p>
+              <div style={{ display: "flex", alignItems: "start", gap: "10px", padding: "10px 12px", borderRadius: "8px", background: "rgba(95,227,255,0.04)", border: "1px solid rgba(95,227,255,0.14)" }}>
+                <span style={{ fontSize: "17px", flexShrink: 0, marginTop: "1px" }}>🗓️</span>
+                <p style={{ fontSize: "12px", color: "var(--ink-3)", lineHeight: 1.6 }}>
+                  Every route you save in the Planner is recorded here with distance, duration, and a stop-by-stop breakdown.
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Tabs */}
+          <div
+            role="tablist"
+            style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}
+            aria-label="Passport sections"
+          >
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls={`panel-${tab.id}`}
+                  id={`tab-${tab.id}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    appearance: "none", border: 0, background: "transparent", cursor: "pointer",
+                    padding: "11px 0",
+                    fontFamily: "var(--font)", fontWeight: 500, fontSize: "11px",
+                    color: isActive ? "var(--cyan)" : "var(--ink-3)",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "5px",
+                    borderBottom: `2px solid ${isActive ? "var(--cyan)" : "transparent"}`,
+                    boxShadow: isActive ? "0 8px 12px -8px rgba(95,227,255,0.4)" : "none",
+                    transition: "color 0.12s ease, border-color 0.12s ease",
+                  }}
+                >
+                  {tab.icon}
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Tab content */}
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+
+        {/* Stats */}
+        {activeTab === "stats" && (
+          <div
+            id="panel-stats"
+            role="tabpanel"
+            aria-labelledby="tab-stats"
+            style={{ padding: "14px", display: "flex", flexDirection: "column", gap: "8px" }}
+          >
+            {/* Section header */}
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>Lifetime</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>
+                Since {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+              </span>
+            </div>
+
+            {STAT_ROWS.map(({ key, label, unit, color, bg, icon }) => (
+              <div
+                key={key}
+                style={{
+                  display: "grid", gridTemplateColumns: "28px 1fr auto",
+                  alignItems: "center", gap: "12px",
+                  padding: "11px 12px",
+                  border: "1px solid var(--line-2)", borderRadius: "10px",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.012), rgba(255,255,255,0))",
+                }}
+              >
+                <div style={{ width: "28px", height: "28px", borderRadius: "8px", display: "grid", placeItems: "center", background: bg, border: `1px solid ${color}44`, color }}>
+                  {icon}
+                </div>
+                <span style={{ color: "var(--ink-2)", fontSize: "12.5px", fontWeight: 500 }}>{label}</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.01em" }}>
+                  {stats[key]}<span style={{ color: "var(--ink-4)", fontWeight: 500, fontSize: "11px", marginLeft: "2px" }}>{unit}</span>
+                </span>
+              </div>
+            ))}
+
+            {/* Trip history quick view */}
+            {tripHistory.length > 0 && (
+              <div style={{ marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
+                <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "10px" }}>
+                  Trip History — {tripHistory.length} recorded
+                </p>
+                {tripHistory.slice(-3).reverse().map((trip) => (
+                  <div key={trip.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--line-2)", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "6px" }}>
+                    <div>
+                      <p style={{ color: "var(--ink)", fontWeight: 500, fontSize: "12.5px" }}>{trip.cityName}</p>
+                      <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", marginTop: "2px" }}>
+                        {formatDistance(trip.distance)} · {formatDuration(trip.duration)} · {trip.poisVisited.length} stops
+                      </p>
+                    </div>
+                    <p style={{ color: "var(--ink-5)", fontFamily: "var(--mono)", fontSize: "9.5px", flexShrink: 0 }}>
+                      {new Date(trip.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Stamps */}
+        {activeTab === "stamps" && (
+          <div
+            id="panel-stamps"
+            role="tabpanel"
+            aria-labelledby="tab-stamps"
+            style={{ padding: "14px" }}
+          >
+            {stamps.length === 0 ? (
+              <EmptyState emoji="🎫" title="No stamps yet" subtitle="Visit neighborhoods to collect stamps" />
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)" }}>Collected</p>
+                  <p style={{ color: "#ffd05a", fontFamily: "var(--mono)", fontSize: "10px", fontWeight: 600 }}>{stamps.length}</p>
+                </div>
+                {[...stamps]
+                  .sort((a, b) => new Date(b.earnedAt).getTime() - new Date(a.earnedAt).getTime())
+                  .map((stamp) => <StampCard key={stamp.id} stamp={stamp} />)}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Quests */}
+        {activeTab === "quests" && (
+          <div
+            id="panel-quests"
+            role="tabpanel"
+            aria-labelledby="tab-quests"
+            style={{ padding: "14px" }}
+          >
+            {activeQuests.length === 0 ? (
+              <EmptyState emoji="🎯" title="No active quests" subtitle="Visit a place to unlock today's quest" />
+            ) : (
+              <>
+                <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "10px" }}>Active</p>
+                {activeQuests.map((quest) => <QuestCard key={quest.id} quest={quest} />)}
+              </>
+            )}
+            {progress.completedQuests.length > 0 && (
+              <div style={{ marginTop: "14px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
+                <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "8px" }}>
+                  Completed ({progress.completedQuests.length})
+                </p>
+                {progress.completedQuests.slice(-5).reverse().map((quest) => (
+                  <div key={quest.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", background: "rgba(92,219,149,0.04)", border: "1px solid rgba(92,219,149,0.12)", marginBottom: "6px" }}>
+                    <span style={{ color: "#5cdb95", fontSize: "12px", flexShrink: 0 }}>✓</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ color: "var(--ink-3)", fontSize: "12px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{quest.title}</p>
+                      <p style={{ color: "var(--ink-5)", fontSize: "10px", fontFamily: "var(--mono)" }}>+{quest.reward.xp} XP</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Badges */}
+        {activeTab === "badges" && (
+          <div
+            id="panel-badges"
+            role="tabpanel"
+            aria-labelledby="tab-badges"
+            style={{ padding: "14px" }}
+          >
+            {achievements.length === 0 ? (
+              <EmptyState emoji="🏆" title="No badges yet" subtitle="Start exploring to earn achievements" />
+            ) : (
+              <>
+                <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "10px" }}>
+                  Earned
+                </p>
+                {achievements.map((a) => <BadgeCard key={a.id} achievement={a} />)}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+        </>
+      )}
+
+      {/* Footer — star + bug report */}
+      <div style={{ flexShrink: 0, borderTop: "1px solid var(--line)", padding: "10px 14px", display: "flex", flexDirection: "column", gap: "8px" }}>
+
+        {/* Bug report form (inline, expands when open) */}
+        {bugOpen && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {bugDone ? (
+              <p style={{ fontSize: "11.5px", color: "#5cdb95", textAlign: "center", padding: "6px 0", fontFamily: "var(--mono)" }}>
+                Thanks — report received.
+              </p>
+            ) : (
+              <>
+                <textarea
+                  autoFocus
+                  value={bugMessage}
+                  onChange={(e) => setBugMessage(e.target.value)}
+                  placeholder="Describe the issue (min 10 chars)..."
+                  rows={3}
+                  style={{
+                    width: "100%", resize: "none", boxSizing: "border-box",
+                    background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)",
+                    borderRadius: "8px", padding: "8px 10px",
+                    color: "var(--ink)", fontSize: "12px", fontFamily: "var(--font)",
+                    lineHeight: 1.5, outline: "none",
+                  }}
+                />
+                <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => { setBugOpen(false); setBugMessage(""); }}
+                    style={{
+                      appearance: "none", border: "1px solid var(--line-2)", borderRadius: "7px",
+                      background: "transparent", color: "var(--ink-4)", cursor: "pointer",
+                      fontSize: "11px", padding: "5px 12px", fontFamily: "var(--font)",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBugSubmit}
+                    disabled={bugSubmitting || bugMessage.trim().length < 10}
+                    style={{
+                      appearance: "none", border: "none", borderRadius: "7px",
+                      background: bugSubmitting || bugMessage.trim().length < 10
+                        ? "rgba(255,107,111,0.15)" : "rgba(255,107,111,0.22)",
+                      color: bugSubmitting || bugMessage.trim().length < 10
+                        ? "rgba(255,107,111,0.45)" : "var(--coral)",
+                      cursor: bugSubmitting || bugMessage.trim().length < 10 ? "not-allowed" : "pointer",
+                      fontSize: "11px", fontWeight: 600, padding: "5px 14px",
+                      fontFamily: "var(--font)", transition: "all 0.12s ease",
+                    }}
+                  >
+                    {bugSubmitting ? "Sending…" : "Send"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Action row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          {/* Star button */}
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={handleStar}
+            disabled={starBusy}
+            aria-label={starred ? "Remove star" : "Star this app"}
             style={{
-              flexShrink: 0,
-              display: "inline-flex", alignItems: "center", gap: "4px",
-              padding: "9px 8px",
-              fontSize: "11.5px", fontWeight: 600,
-              color: activeTab === tab.id ? "var(--cyan)" : "var(--ink-3)",
-              background: "transparent", border: "none", cursor: "pointer",
-              position: "relative", whiteSpace: "nowrap",
-              transition: "color 150ms ease",
+              appearance: "none", border: "none", background: "transparent",
+              cursor: starBusy ? "default" : "pointer",
+              display: "inline-flex", alignItems: "center", gap: "5px",
+              color: starred ? "#ffd05a" : "var(--ink-4)",
+              fontSize: "11.5px", fontFamily: "var(--font)", fontWeight: starred ? 600 : 400,
+              padding: "4px 6px", borderRadius: "6px",
+              transition: "color 0.15s ease",
             }}
           >
-            {activeTab === tab.id && (
-              <span style={{
-                position: "absolute", left: "6px", right: "6px", bottom: "-1px",
-                height: "2px", background: "var(--cyan)", borderRadius: "2px",
-                boxShadow: "0 0 8px var(--cyan)",
-              }} />
-            )}
-            <span style={{ fontSize: "12px" }}>{tab.emoji}</span>
-            <span>{tab.label}</span>
+            <svg
+              width="13" height="13" viewBox="0 0 24 24"
+              fill={starred ? "#ffd05a" : "none"}
+              stroke={starred ? "#ffd05a" : "currentColor"}
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ flexShrink: 0, transition: "fill 0.15s ease, stroke 0.15s ease" }}
+            >
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+            {starCount > 0
+              ? <span>{starCount} {starCount === 1 ? "star" : "stars"}</span>
+              : <span>{starred ? "Starred" : "Star this app"}</span>
+            }
           </button>
-        ))}
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {showGuide ? <GuideTab /> : (
-          <>
-            {activeTab === "overview" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                <StatRow emoji="🎫" label="Stamps" value={stamps.length} color="amber" onClick={() => setActiveTab("stamps")} />
-                <StatRow emoji="📍" label="POIs visited" value={statistics.poisVisited} color="coral" />
-                <StatRow emoji="🌆" label="Cities explored" value={statistics.citiesVisited} color="orchid" />
-                <StatRow emoji="🚶" label="Distance" value={`${(statistics.totalDistance / 1000).toFixed(1)} km`} color="ocean" />
-                <StatRow emoji="✅" label="Quests done" value={statistics.questsCompleted} color="emerald" />
-                <StatRow emoji="🔥" label="Streak" value={`${statistics.currentStreak}d`} color="fire" />
-                {badges.length > 0 && (
-                  <div style={{ paddingTop: "10px", marginTop: "4px", borderTop: "1px solid var(--line)" }}>
-                    <p className="section-label" style={{ marginBottom: "8px" }}>Recent Badges</p>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                      {badges.slice(0, 8).map((badge) => (
-                        <div
-                          key={badge.id}
-                          style={{
-                            width: "38px", height: "38px", borderRadius: "10px",
-                            background: "linear-gradient(180deg, var(--panel-2), var(--panel))",
-                            border: "1px solid var(--line)",
-                            display: "grid", placeItems: "center", fontSize: "16px",
-                          }}
-                          title={badge.description}
-                        >
-                          {badge.iconEmoji}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+          {/* Bug report trigger */}
+          <button
+            onClick={() => { setBugOpen((v) => !v); setBugDone(false); }}
+            style={{
+              appearance: "none", border: "none", background: "transparent",
+              cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "5px",
+              color: bugOpen ? "var(--coral)" : "var(--ink-5)",
+              fontSize: "11px", fontFamily: "var(--font)",
+              padding: "4px 6px", borderRadius: "6px",
+              transition: "color 0.12s ease",
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Report a bug
+          </button>
+        </div>
 
-            {activeTab === "stamps" && (
-              <div className="space-y-2">
-                {stamps.length === 0 ? (
-                  <EmptyState emoji="🎫" title="No stamps yet" subtitle="Visit neighborhoods to collect stamps" />
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="section-label">{stamps.length} collected</p>
-                      <div className="flex gap-1.5">
-                        {getRarityDistribution(stamps).map(({ rarity, count }) => (
-                          <span key={rarity} className="text-[10px] text-slate-500" title={`${count} ${rarity}`}>
-                            {getRarityEmoji(rarity)}{count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    {[...stamps]
-                      .sort((a, b) => new Date(b.earnedAt).getTime() - new Date(a.earnedAt).getTime())
-                      .map((stamp) => <StampCard key={stamp.id} stamp={stamp} />)}
-                  </>
-                )}
-              </div>
-            )}
-
-            {activeTab === "quests" && (
-              <div className="space-y-2">
-                {activeQuests.length === 0 ? (
-                  <EmptyState emoji="🎯" title="No active quests" subtitle="Visit a place to unlock today's quest" />
-                ) : (
-                  <>
-                    <p className="section-label mb-1">Active</p>
-                    {activeQuests.map((quest) => <QuestCard key={quest.id} quest={quest} />)}
-                  </>
-                )}
-                {progress.completedQuests.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-white/[0.06]">
-                    <p className="section-label mb-2">Completed ({progress.completedQuests.length})</p>
-                    {progress.completedQuests.slice(-5).reverse().map((quest) => (
-                      <div key={quest.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.05] mb-1.5">
-                        <span className="text-emerald-400 text-sm">✓</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-slate-400 text-xs font-semibold truncate">{quest.title}</p>
-                          <p className="text-slate-600 text-[10px]">+{quest.reward.xp} XP</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === "achievements" && (
-              <div className="space-y-2">
-                {achievements.length === 0 ? (
-                  <EmptyState emoji="🏆" title="No achievements yet" subtitle="Start exploring to earn badges" />
-                ) : (
-                  achievements.map((a) => <AchievementCard key={a.id} achievement={a} />)
-                )}
-              </div>
-            )}
-
-            {activeTab === "mystery" && (
-              <div className="space-y-2">
-                {mysteryBoxes.length === 0 ? (
-                  <EmptyState emoji="🎁" title="No mystery boxes" subtitle="Visit 10 places to earn one" />
-                ) : (
-                  mysteryBoxes.map((box) => (
-                    <MysteryBoxCard key={box.id} box={box} onOpen={openMysteryBox} />
-                  ))
-                )}
-              </div>
-            )}
-
-            {activeTab === "history" && (
-              <div className="space-y-2">
-                {tripHistory.length === 0 ? (
-                  <EmptyState emoji="📅" title="No trips yet" subtitle="Save a planned route to record it here" />
-                ) : (
-                  <>
-                    <p className="section-label mb-1">{tripHistory.length} trip{tripHistory.length !== 1 ? "s" : ""} recorded</p>
-                    {tripHistory.map((trip) => <TripCard key={trip.id} trip={trip} />)}
-                  </>
-                )}
-              </div>
-            )}
-          </>
-        )}
       </div>
     </div>
   );
 }
 
-/* ============ Sub-components ============ */
-
-const STAT_COLOR_MAP: Record<string, { bg: string; border: string; color: string }> = {
-  ocean:   { bg: "oklch(0.30 0.10 205 / 0.5)", border: "oklch(0.5 0.12 205 / 0.5)", color: "var(--cyan)" },
-  coral:   { bg: "oklch(0.30 0.10 22 / 0.5)",  border: "oklch(0.5 0.14 22 / 0.5)",  color: "var(--coral)" },
-  emerald: { bg: "oklch(0.30 0.10 160 / 0.5)", border: "oklch(0.5 0.12 160 / 0.5)", color: "var(--mint)" },
-  amber:   { bg: "oklch(0.30 0.10 70 / 0.5)",  border: "oklch(0.5 0.12 70 / 0.5)",  color: "var(--amber)" },
-  orchid:  { bg: "oklch(0.30 0.10 295 / 0.5)", border: "oklch(0.5 0.14 295 / 0.5)", color: "var(--orchid)" },
-  fire:    { bg: "oklch(0.30 0.10 40 / 0.5)",  border: "oklch(0.5 0.14 40 / 0.5)",  color: "oklch(0.78 0.18 40)" },
-};
-
-function StatRow({
-  emoji, label, value, color, onClick,
-}: {
-  emoji: string;
-  label: string;
-  value: string | number;
-  color: "ocean" | "coral" | "emerald" | "amber" | "orchid" | "fire";
-  onClick?: () => void;
-}) {
-  const cs = STAT_COLOR_MAP[color] ?? STAT_COLOR_MAP.ocean;
-  const Tag = (onClick ? "button" : "div") as React.ElementType;
-
-  return (
-    <Tag
-      onClick={onClick}
-      style={{
-        display: "grid", gridTemplateColumns: "30px 1fr auto",
-        alignItems: "center", gap: "10px",
-        padding: "8px 12px",
-        background: "linear-gradient(180deg, var(--panel-2), var(--panel))",
-        border: "1px solid var(--line)",
-        borderRadius: "10px",
-        width: "100%", textAlign: "left",
-        cursor: onClick ? "pointer" : "default",
-        transition: "border-color 120ms ease",
-      }}
-    >
-      <div style={{
-        width: "30px", height: "30px", borderRadius: "8px",
-        background: cs.bg, border: `1px solid ${cs.border}`,
-        display: "grid", placeItems: "center",
-        fontSize: "14px",
-      }}>
-        {emoji}
-      </div>
-      <span style={{ fontSize: "12.5px", color: "var(--ink-2)", fontWeight: 500 }}>{label}</span>
-      <span style={{
-        fontFamily: "'Space Grotesk', sans-serif",
-        fontSize: "15px", fontWeight: 700, letterSpacing: "-0.01em",
-        color: cs.color,
-      }}>
-        {value}
-      </span>
-    </Tag>
-  );
-}
+/* ---- Sub-components ---- */
 
 function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; subtitle: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 text-center">
-      <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-2xl mb-3">
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "36px 16px", textAlign: "center", gap: "8px" }}>
+      <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line-2)", display: "grid", placeItems: "center", fontSize: "22px", marginBottom: "4px" }}>
         {emoji}
       </div>
-      <p className="text-slate-400 text-sm font-semibold mb-1">{title}</p>
-      <p className="text-slate-600 text-xs">{subtitle}</p>
+      <p style={{ color: "var(--ink-3)", fontSize: "13.5px", fontWeight: 600 }}>{title}</p>
+      <p style={{ color: "var(--ink-5)", fontSize: "11.5px", lineHeight: 1.5 }}>{subtitle}</p>
     </div>
   );
 }
 
 function StampCard({ stamp }: { stamp: Stamp }) {
-  const rarityStyle = {
-    common:    "border-slate-600/40 bg-slate-800/40",
-    rare:      "border-ocean-500/40 bg-ocean-900/30",
-    legendary: "border-amber-500/50 bg-amber-900/20",
-  }[stamp.rarity];
-
-  const rarityText = {
-    common:    "text-slate-400",
-    rare:      "text-ocean-300",
-    legendary: "text-amber-300",
-  }[stamp.rarity];
+  const isLegendary = stamp.rarity === "legendary";
+  const isRare = stamp.rarity === "rare";
+  const accentColor = isLegendary ? "#ffd05a" : isRare ? "#b196ff" : "var(--ink-4)";
+  const accentBg = isLegendary ? "rgba(255,208,90,0.04)" : isRare ? "rgba(177,150,255,0.04)" : "transparent";
+  const accentBorder = isLegendary ? "rgba(255,208,90,0.28)" : isRare ? "rgba(177,150,255,0.25)" : "var(--line-2)";
 
   return (
-    <div className={`border rounded-xl p-3 ${rarityStyle}`}>
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-base">{getRarityEmoji(stamp.rarity)}</span>
+    <div style={{ position: "relative", border: `1px solid ${accentBorder}`, borderRadius: "12px", background: accentBg, padding: "12px", overflow: "hidden", marginBottom: "10px" }}>
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "3px", background: `linear-gradient(180deg, ${accentColor}, transparent)` }} />
+      <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: "10px", marginBottom: "6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ width: "24px", height: "24px", borderRadius: "7px", background: isLegendary ? "rgba(255,208,90,0.12)" : "rgba(255,255,255,0.04)", border: `1px solid ${accentColor}44`, display: "grid", placeItems: "center", color: accentColor, fontSize: "12px", flexShrink: 0 }}>
+            {isLegendary ? "🌟" : isRare ? "✨" : "🎫"}
+          </div>
           <div>
-            <p className="text-white font-semibold text-sm">{stamp.neighborhoodName}</p>
-            <p className="text-slate-400 text-xs">{stamp.cityName}, {stamp.countryCode}</p>
+            <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13.5px" }}>{stamp.neighborhoodName}</p>
+            <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", letterSpacing: "0.02em", marginTop: "1px" }}>{stamp.cityName}</p>
           </div>
         </div>
-        <span className={`text-[10px] font-bold uppercase ${rarityText}`}>{stamp.rarity}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", padding: "4px 7px", borderRadius: "5px", background: isLegendary ? "rgba(255,208,90,0.12)" : "rgba(255,255,255,0.04)", color: accentColor, border: `1px solid ${accentColor}44`, flexShrink: 0 }}>
+          {stamp.rarity}
+        </span>
       </div>
-
       {stamp.aiDescription && (
-        <p className="text-slate-400 text-xs leading-relaxed bg-black/[0.2] rounded-lg p-2 mb-2">
-          {stamp.aiDescription}
-        </p>
+        <p style={{ color: "var(--ink-3)", fontSize: "12px", lineHeight: 1.5, marginBottom: "8px" }}>{stamp.aiDescription}</p>
       )}
-
-      <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-white/[0.08] pt-2">
+      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: "9.5px", color: "var(--ink-5)", letterSpacing: "0.06em", borderTop: "1px solid var(--line)", paddingTop: "8px" }}>
         <span>{stamp.uniquePOIsVisited} place{stamp.uniquePOIsVisited !== 1 ? "s" : ""}</span>
         <span>{new Date(stamp.earnedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
       </div>
@@ -363,278 +735,63 @@ function StampCard({ stamp }: { stamp: Stamp }) {
 }
 
 function QuestCard({ quest }: { quest: Quest }) {
-  const diffColor = {
-    easy:   "text-emerald-400",
-    medium: "text-amber-400",
-    hard:   "text-coral-400",
-    epic:   "text-purple-400",
-  }[quest.difficulty];
+  const diffMap: Record<string, { color: string; bg: string; border: string }> = {
+    easy:   { color: "#5cdb95", bg: "rgba(92,219,149,0.10)", border: "rgba(92,219,149,0.28)" },
+    medium: { color: "#ffa14a", bg: "rgba(255,161,74,0.10)", border: "rgba(255,161,74,0.28)" },
+    hard:   { color: "#ff6b6f", bg: "rgba(255,107,111,0.10)", border: "rgba(255,107,111,0.28)" },
+    epic:   { color: "#b196ff", bg: "rgba(177,150,255,0.10)", border: "rgba(177,150,255,0.28)" },
+  };
+  const diff = diffMap[quest.difficulty] ?? diffMap.medium;
 
   return (
-    <div className="glass-card p-3">
-      <div className="flex items-start justify-between mb-2 gap-2">
-        <div>
-          <p className="text-white font-semibold text-sm">{quest.title}</p>
-          <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{quest.description}</p>
-        </div>
-        <span className={`text-[10px] font-bold flex-shrink-0 ${diffColor}`}>{quest.difficulty.toUpperCase()}</span>
-      </div>
-      <div className="xp-bar mb-2">
-        <div className="xp-bar-fill" style={{ width: `${quest.progress}%` }} />
-      </div>
-      <div className="space-y-1">
-        {quest.requirements.map((req) => (
-          <div key={req.id} className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-400">{req.description}</span>
-            <span className="text-slate-300 font-semibold">{req.current}/{req.target}</span>
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between">
-        <span className="text-slate-600 text-[11px]">
-          {quest.expiresAt
-            ? `Expires ${new Date(quest.expiresAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`
-            : "Reward"}
+    <div style={{ border: "1px solid var(--line-2)", borderRadius: "12px", padding: "12px", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "10px" }}>
+      <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: "10px", marginBottom: "6px" }}>
+        <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13.5px" }}>{quest.title}</p>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", padding: "4px 7px", borderRadius: "5px", background: diff.bg, color: diff.color, border: `1px solid ${diff.border}`, flexShrink: 0 }}>
+          {quest.difficulty}
         </span>
-        <span className="text-ocean-300 text-[11px] font-semibold">+{quest.reward.xp} XP</span>
+      </div>
+      <p style={{ color: "var(--ink-3)", fontSize: "12px", lineHeight: 1.5, marginBottom: "10px" }}>{quest.description}</p>
+      <div style={{ height: "4px", background: "rgba(255,255,255,0.06)", borderRadius: "3px", overflow: "hidden", marginBottom: "6px" }}>
+        <div style={{ height: "100%", width: `${quest.progress}%`, background: "linear-gradient(90deg, var(--cyan-2), #5cdb95)", borderRadius: "3px" }} />
+      </div>
+      {quest.requirements.map((req) => (
+        <div key={req.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--ink-3)", letterSpacing: "0.04em" }}>{req.description}</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--ink)" }}>{req.current}/{req.target}</span>
+        </div>
+      ))}
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)", fontFamily: "var(--mono)", fontSize: "9.5px" }}>
+        <span style={{ color: "var(--ink-5)" }}>
+          {quest.expiresAt ? `Expires ${new Date(quest.expiresAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}` : "No expiry"}
+        </span>
+        <span style={{ color: "var(--cyan)", fontWeight: 600 }}>+{quest.reward.xp} XP</span>
       </div>
     </div>
   );
 }
 
-function AchievementCard({ achievement }: { achievement: Achievement }) {
-  const tierStyle = {
-    bronze:   "border-amber-700/40 bg-amber-900/20",
-    silver:   "border-slate-400/30 bg-slate-800/30",
-    gold:     "border-amber-400/40 bg-amber-900/20",
-    platinum: "border-ocean-400/40 bg-ocean-900/20",
-  }[achievement.tier];
+function BadgeCard({ achievement }: { achievement: Achievement }) {
+  const tierColors: Record<string, { color: string; bg: string; border: string }> = {
+    bronze:   { color: "#c97c3a", bg: "rgba(201,124,58,0.08)", border: "rgba(201,124,58,0.25)" },
+    silver:   { color: "#9aa5b4", bg: "rgba(154,165,180,0.06)", border: "rgba(154,165,180,0.20)" },
+    gold:     { color: "#ffd05a", bg: "rgba(255,208,90,0.08)", border: "rgba(255,208,90,0.28)" },
+    platinum: { color: "#5fe3ff", bg: "rgba(95,227,255,0.08)", border: "rgba(95,227,255,0.25)" },
+  };
+  const tier = tierColors[achievement.tier] ?? tierColors.silver;
 
   return (
-    <div className={`border rounded-xl px-3 py-2.5 flex items-center gap-3 ${tierStyle}`}>
-      <span className="text-xl flex-shrink-0">{achievement.iconEmoji}</span>
-      <div className="flex-1 min-w-0">
-        <p className="text-white font-semibold text-sm">{achievement.name}</p>
-        <p className="text-slate-400 text-xs">{achievement.description}</p>
+    <div style={{ display: "grid", gridTemplateColumns: "36px 1fr auto", gap: "12px", alignItems: "center", border: `1px solid ${tier.border}`, borderRadius: "12px", padding: "11px 12px", background: tier.bg, marginBottom: "8px" }}>
+      <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "rgba(255,255,255,0.04)", border: `1px solid ${tier.border}`, display: "grid", placeItems: "center", fontSize: "18px" }}>
+        {achievement.iconEmoji}
       </div>
-      <span className="text-ocean-300 text-xs font-semibold flex-shrink-0">+{achievement.reward.xp} XP</span>
-    </div>
-  );
-}
-
-function MysteryBoxCard({ box, onOpen }: { box: MysteryBox; onOpen: (id: string) => void }) {
-  const rarityStyle = {
-    common:    "border-slate-600/40 bg-slate-800/30",
-    rare:      "border-ocean-500/40 bg-ocean-900/20",
-    epic:      "border-purple-500/40 bg-purple-900/20",
-    legendary: "border-amber-400/40 bg-amber-900/15",
-  }[box.rarity];
-
-  return (
-    <div className={`border rounded-xl p-3 ${rarityStyle}`}>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-2xl">🎁</span>
-        <span className="text-[10px] font-bold text-white uppercase tracking-wide">{box.rarity}</span>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{achievement.name}</p>
+        <p style={{ color: "var(--ink-4)", fontSize: "11.5px", marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{achievement.description}</p>
       </div>
-      {!box.opened ? (
-        <button onClick={() => onOpen(box.id)} className="w-full btn-primary py-2 text-sm">
-          Open Mystery Box
-        </button>
-      ) : (
-        <div className="bg-black/[0.2] rounded-lg p-2.5">
-          <p className="text-slate-300 text-xs leading-relaxed">{box.reward.content}</p>
-        </div>
-      )}
+      <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color: "#5cdb95", letterSpacing: "0.04em", flexShrink: 0 }}>
+        +{achievement.reward.xp}
+      </span>
     </div>
   );
-}
-
-function TripCard({ trip }: { trip: TripMemory }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const moodEmojis: Record<string, string> = {
-    contemplative: "🤔", energetic: "⚡", creative: "🎨", indulgent: "🍰",
-    peaceful: "🌿", social: "👥", intellectual: "📚", adventurous: "🏔️",
-  };
-
-  return (
-    <div className="glass-card p-3">
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="w-full text-left"
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <span className="text-sm">🗺️</span>
-              <p className="text-white font-semibold text-sm truncate">{trip.cityName}</p>
-              {trip.mood && (
-                <span className="text-sm flex-shrink-0" title={trip.mood}>{moodEmojis[trip.mood]}</span>
-              )}
-            </div>
-            <p className="text-slate-500 text-[10px]">
-              {new Date(trip.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-            </p>
-          </div>
-          <span className="text-slate-600 text-xs flex-shrink-0">{expanded ? "▲" : "▼"}</span>
-        </div>
-        <div className="flex gap-3 mt-2">
-          <span className="text-ocean-400 text-[11px] font-semibold">{formatDistance(trip.distance)}</span>
-          <span className="text-slate-600 text-[11px]">·</span>
-          <span className="text-slate-400 text-[11px]">{formatDuration(trip.duration)}</span>
-          <span className="text-slate-600 text-[11px]">·</span>
-          <span className="text-slate-400 text-[11px]">{trip.poisVisited.length} stop{trip.poisVisited.length !== 1 ? "s" : ""}</span>
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="mt-2 pt-2 border-t border-white/[0.06] space-y-1">
-          {trip.poisVisited.map((poi, i) => (
-            <div key={poi.id ?? i} className="flex items-center gap-2">
-              <span className="w-4 h-4 rounded-full bg-ocean-500/[0.3] border border-ocean-500/[0.4] text-ocean-300 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
-                {i + 1}
-              </span>
-              <p className="text-slate-400 text-[11px] truncate">{poi.name}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GuideTab() {
-  return (
-    <div className="space-y-4 pb-2">
-      <GuideSection emoji="🎫" title="Stamps">
-        <p className="text-slate-400 text-xs leading-relaxed mb-2">
-          Earned each time you visit a new place. Each stamp records the neighborhood and city. Rarity is determined by how off-the-beaten-path the area is.
-        </p>
-        <div className="space-y-1">
-          <RarityRow emoji="🎫" label="Common" desc="Tourist hotspots in major cities" color="text-slate-400" />
-          <RarityRow emoji="✨" label="Rare" desc="Lesser-known neighborhoods" color="text-ocean-300" />
-          <RarityRow emoji="🌟" label="Legendary" desc="Anywhere outside major cities" color="text-amber-300" />
-        </div>
-      </GuideSection>
-
-      <GuideSection emoji="✨" title="XP & Titles">
-        <p className="text-slate-400 text-xs leading-relaxed mb-2">
-          Every new place you visit earns +10 XP. Completing quests and unlocking achievements gives bonus XP. Your title advances every 5 levels.
-        </p>
-        <div className="space-y-1">
-          {([
-            ["👤", "Tourist",      "Lv 1–4"],
-            ["🎒", "Traveler",     "Lv 5–9"],
-            ["🧭", "Explorer",     "Lv 10–14"],
-            ["🗺️", "Local Guide",  "Lv 15–19"],
-            ["⭐", "City Expert",  "Lv 20–24"],
-            ["👑", "Legend",       "Lv 25+"],
-          ] as const).map(([emoji, title, range]) => (
-            <div key={title} className="flex items-center gap-2 text-xs">
-              <span className="w-5 text-center">{emoji}</span>
-              <span className="text-slate-300 w-24">{title}</span>
-              <span className="text-slate-600">{range}</span>
-            </div>
-          ))}
-        </div>
-      </GuideSection>
-
-      <GuideSection emoji="🎯" title="Quests">
-        <p className="text-slate-400 text-xs leading-relaxed">
-          Two daily challenges unlock when you visit your first place: a discovery quest and a category quest. Both expire at midnight. Complete them for XP rewards.
-        </p>
-      </GuideSection>
-
-      <GuideSection emoji="🏆" title="Achievements">
-        <p className="text-slate-400 text-xs leading-relaxed mb-2">
-          Milestone badges awarded automatically as you explore. Each one also grants bonus XP.
-        </p>
-        <div className="space-y-1">
-          <AchRow emoji="👣" label="First Steps"     desc="Visit 1 place"    xp={10} />
-          <AchRow emoji="🗺️" label="Explorer Fifty"  desc="Visit 50 places"  xp={200} />
-          <AchRow emoji="💯" label="Century Club"    desc="Visit 100 places" xp={500} />
-          <AchRow emoji="🏃" label="Marathon Walker" desc="Walk 42 km total" xp={500} />
-        </div>
-      </GuideSection>
-
-      <GuideSection emoji="🎁" title="Mystery Boxes">
-        <p className="text-slate-400 text-xs leading-relaxed">
-          Awarded every 10 visits. Open a box to reveal a local insight about the neighborhood you just explored.
-        </p>
-      </GuideSection>
-
-      <GuideSection emoji="📅" title="Trip History">
-        <p className="text-slate-400 text-xs leading-relaxed">
-          Every route you save in the Planner is recorded here with distance, duration, and a stop-by-stop breakdown.
-        </p>
-      </GuideSection>
-    </div>
-  );
-}
-
-function GuideSection({ emoji, title, children }: { emoji: string; title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
-      <p className="text-white text-xs font-semibold mb-2 flex items-center gap-1.5">
-        <span>{emoji}</span>
-        <span>{title}</span>
-      </p>
-      {children}
-    </div>
-  );
-}
-
-function RarityRow({ emoji, label, desc, color }: { emoji: string; label: string; desc: string; color: string }) {
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span>{emoji}</span>
-      <span className={`font-semibold w-20 ${color}`}>{label}</span>
-      <span className="text-slate-600">{desc}</span>
-    </div>
-  );
-}
-
-function AchRow({ emoji, label, desc, xp }: { emoji: string; label: string; desc: string; xp: number }) {
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span>{emoji}</span>
-      <span className="text-slate-300 flex-1">{label}</span>
-      <span className="text-slate-600 mr-2">{desc}</span>
-      <span className="text-ocean-400 font-semibold">+{xp}</span>
-    </div>
-  );
-}
-
-/* ============ Helpers ============ */
-
-function getLevelGradientCSS(title: string): string {
-  const map: Record<string, string> = {
-    Tourist:       "linear-gradient(135deg, oklch(0.45 0.04 250), oklch(0.35 0.03 250))",
-    Traveler:      "linear-gradient(135deg, oklch(0.65 0.14 160), oklch(0.50 0.12 160))",
-    Explorer:      "linear-gradient(135deg, oklch(0.65 0.12 205), oklch(0.50 0.10 205))",
-    "Local Guide": "linear-gradient(135deg, oklch(0.65 0.16 295), oklch(0.50 0.14 295))",
-    "City Expert": "linear-gradient(135deg, oklch(0.65 0.14 22), oklch(0.50 0.12 22))",
-    Legend:        "linear-gradient(135deg, oklch(0.75 0.14 88), oklch(0.60 0.14 22))",
-  };
-  return map[title] ?? map.Tourist;
-}
-
-function getLevelEmoji(title: string): string {
-  const map: Record<string, string> = {
-    Tourist: "👤", Traveler: "🎒", Explorer: "🧭",
-    "Local Guide": "🗺️", "City Expert": "⭐", Legend: "👑",
-  };
-  return map[title] ?? "👤";
-}
-
-function getRarityEmoji(rarity: "common" | "rare" | "legendary"): string {
-  return { common: "🎫", rare: "✨", legendary: "🌟" }[rarity];
-}
-
-function getRarityDistribution(stamps: Stamp[]) {
-  const dist = { common: 0, rare: 0, legendary: 0 };
-  stamps.forEach((s) => dist[s.rarity]++);
-  return (["legendary", "rare", "common"] as const)
-    .map((r) => ({ rarity: r, count: dist[r] }))
-    .filter((x) => x.count > 0);
 }

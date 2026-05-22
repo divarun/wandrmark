@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 dotenv.config();
 
 // Use @upstash/redis (HTTP) when UPSTASH_REDIS_REST_URL is set (production/serverless),
@@ -105,14 +106,15 @@ export async function deleteCachePattern(pattern: string): Promise<number> {
 }
 
 export const CacheKeys = {
-  overpass: (query: string) => getCacheKey("overpass", Buffer.from(query).toString("base64").substring(0, 50)),
+  overpass: (query: string) =>
+    getCacheKey("overpass", crypto.createHash("sha256").update(query).digest("hex").substring(0, 32)),
   nominatim: (type: "search" | "reverse", params: string) => getCacheKey("nominatim", type, params),
   aiNeighborhoodFact: (neighborhood: string, city: string) =>
     getCacheKey("ai", "neighborhood", city.toLowerCase(), neighborhood.toLowerCase()),
   aiTips: (poiName: string, category: string, address: string) =>
     getCacheKey("ai", "tips", category, poiName.toLowerCase().substring(0, 30), address.toLowerCase().substring(0, 40)),
   aiRecommendations: (selectedPois: string, preferences: string) =>
-    getCacheKey("ai", "recs", Buffer.from(selectedPois + preferences).toString("base64").substring(0, 50)),
+    getCacheKey("ai", "recs", crypto.createHash("sha256").update(selectedPois + preferences).digest("hex").substring(0, 32)),
   aiCitySummary: (cityName: string, neighborhoods: string[]) =>
     getCacheKey("ai", "city", cityName.toLowerCase(), [...neighborhoods].sort().join("-").substring(0, 50)),
   aiHistoricalContext: (name: string, category: string, address: string) =>

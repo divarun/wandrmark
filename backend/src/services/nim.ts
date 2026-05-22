@@ -52,7 +52,8 @@ async function nimGenerate(prompt: string, systemPrompt?: string): Promise<strin
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`NIM API error ${response.status}: ${errText}`);
+        console.error(`[NIM] API error ${response.status}:`, errText.substring(0, 300));
+        throw new Error(`NIM API returned status ${response.status}.`);
       }
 
       const data = (await response.json()) as NIMChatResponse;

@@ -1,7 +1,6 @@
 "use client";
-import { useState, useEffect, useRef, useCallback, KeyboardEvent } from "react";
-import { POI } from "@/types";
-import { CATEGORY_CONFIG } from "@/utils/constants";
+import { memo, useState, useEffect, useRef, useCallback, KeyboardEvent } from "react";
+import { POI, POICategory } from "@/types";
 import { useFavorites } from "@/hooks/useFavorites";
 import { geocodeSearch } from "@/services/nominatim";
 import { aiApi, CityInsights } from "@/services/api";
@@ -40,6 +39,78 @@ interface SearchResult {
   lng: number;
 }
 
+const ALL_CATEGORIES: POICategory[] = ["restaurant", "cafe", "attraction", "park", "museum"];
+
+const CATEGORY_CONFIG: {
+  cat: POICategory;
+  label: string;
+  color: string;
+  glow: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    cat: "restaurant",
+    label: "Eat",
+    color: "#ff6b6f",
+    glow: "rgba(255,107,111,0.18)",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 2v7a3 3 0 0 0 6 0V2"/><line x1="6" y1="9" x2="6" y2="22"/>
+        <path d="M18 2v20"/><path d="M14 6c0-2 2-4 4-4"/>
+      </svg>
+    ),
+  },
+  {
+    cat: "cafe",
+    label: "Café",
+    color: "#ffa14a",
+    glow: "rgba(255,161,74,0.16)",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 8h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z"/>
+        <path d="M17 9h2a3 3 0 0 1 0 6h-2"/>
+        <path d="M6 3v2M10 3v2M14 3v2"/>
+      </svg>
+    ),
+  },
+  {
+    cat: "attraction",
+    label: "Visit",
+    color: "#b196ff",
+    glow: "rgba(177,150,255,0.18)",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+      </svg>
+    ),
+  },
+  {
+    cat: "park",
+    label: "Park",
+    color: "#5cdb95",
+    glow: "rgba(92,219,149,0.16)",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 22V12"/><path d="M5 12c0-4 3-7 7-7s7 3 7 7c0 2-1.5 4-3 4H8c-1.5 0-3-2-3-4Z"/>
+      </svg>
+    ),
+  },
+  {
+    cat: "museum",
+    label: "Arts",
+    color: "#ff8fb7",
+    glow: "rgba(255,143,183,0.16)",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/>
+        <line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/>
+        <line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/>
+      </svg>
+    ),
+  },
+];
+
 interface ExplorerSidebarProps {
   pois: POI[];
   loading: boolean;
@@ -48,9 +119,12 @@ interface ExplorerSidebarProps {
   onSearchResult: (lat: number, lng: number) => void;
   onAddToPlanner: (poi: POI) => void;
   onRetry?: () => void;
+  activeCategories: POICategory[];
+  onToggleCategory: (cat: POICategory) => void;
+  onSelectAllCategories: () => void;
 }
 
-export default function ExplorerSidebar({
+function ExplorerSidebarInner({
   pois,
   loading,
   error,
@@ -58,6 +132,9 @@ export default function ExplorerSidebar({
   onSearchResult,
   onAddToPlanner,
   onRetry,
+  activeCategories,
+  onToggleCategory,
+  onSelectAllCategories,
 }: ExplorerSidebarProps) {
   const [search, setSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -70,8 +147,11 @@ export default function ExplorerSidebar({
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [focusedIdx, setFocusedIdx] = useState(-1);
+  const [insightsCollapsed, setInsightsCollapsed] = useState(false);
   const insightAbort = useRef<AbortController | null>(null);
   const { isFavorite, addFavorite, removeFavorite } = useFavorites();
+
+  const isAllActive = activeCategories.length === ALL_CATEGORIES.length;
 
   useEffect(() => {
     setSearchHistory(loadHistory());
@@ -118,6 +198,7 @@ export default function ExplorerSidebar({
   const selectResult = useCallback((r: SearchResult) => {
     onSearchResult(r.lat, r.lng);
     setInsightCityName(r.name);
+    setInsightsCollapsed(false);
     setSearchResults([]);
     setShowDropdown(false);
     setSearch("");
@@ -139,48 +220,113 @@ export default function ExplorerSidebar({
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      if (focusedIdx >= 0 && isShowingResults) {
-        selectResult(searchResults[focusedIdx]);
-      } else if (focusedIdx >= 0 && isShowingHistory) {
-        selectHistoryItem(searchHistory[focusedIdx]);
-      } else {
-        runSearch(search);
-      }
+      if (focusedIdx >= 0 && isShowingResults) selectResult(searchResults[focusedIdx]);
+      else if (focusedIdx >= 0 && isShowingHistory) selectHistoryItem(searchHistory[focusedIdx]);
+      else runSearch(search);
       return;
     }
-    if (e.key === "Escape") {
-      setShowDropdown(false);
-      setFocusedIdx(-1);
-      return;
-    }
+    if (e.key === "Escape") { setShowDropdown(false); setFocusedIdx(-1); return; }
     if (dropdownLen === 0) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setFocusedIdx((prev) => (prev + 1) % dropdownLen);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setFocusedIdx((prev) => (prev <= 0 ? dropdownLen - 1 : prev - 1));
-    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setFocusedIdx((prev) => (prev + 1) % dropdownLen); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setFocusedIdx((prev) => (prev <= 0 ? dropdownLen - 1 : prev - 1)); }
   };
 
   const filteredPois = search.trim()
     ? pois.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
     : pois;
 
+  const slides = cityInsights ? [
+    { key: "about",   label: "About",     color: "#ff6b6f", bg: "rgba(255,107,111,0.10)" },
+    { key: "known",   label: "Known For", color: "#b196ff", bg: "rgba(177,150,255,0.10)" },
+    { key: "history", label: "History",   color: "#ffa14a", bg: "rgba(255,161,74,0.10)" },
+    { key: "tip",     label: "Local Tip", color: "#5cdb95", bg: "rgba(92,219,149,0.10)" },
+  ] : [];
+
+  const goTo = (idx: number) => {
+    setSlideDir(idx > slide ? "right" : "left");
+    setSlide(idx);
+  };
+
+  const POI_COLORS: Record<POICategory, { color: string; bg: string; border: string }> = {
+    restaurant: { color: "#ff6b6f", bg: "rgba(255,107,111,0.07)", border: "rgba(255,107,111,0.22)" },
+    cafe:       { color: "#ffa14a", bg: "rgba(255,161,74,0.07)",  border: "rgba(255,161,74,0.22)"  },
+    attraction: { color: "#b196ff", bg: "rgba(177,150,255,0.07)", border: "rgba(177,150,255,0.22)" },
+    park:       { color: "#5cdb95", bg: "rgba(92,219,149,0.07)",  border: "rgba(92,219,149,0.22)"  },
+    museum:     { color: "#ff8fb7", bg: "rgba(255,143,183,0.07)", border: "rgba(255,143,183,0.22)" },
+  };
+
   return (
-    <div className="flex flex-col h-full">
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+
+      {/* Category tabs */}
+      <div style={{ padding: "10px 12px 0", flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: "5px" }}>
+          {/* All tab */}
+          <button
+            onClick={onSelectAllCategories}
+            aria-selected={isAllActive}
+            title="Show all"
+            style={{
+              flex: 1, borderRadius: "9px",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px",
+              border: `1px solid ${isAllActive ? "rgba(95,227,255,0.5)" : "var(--line-2)"}`,
+              background: isAllActive
+                ? "linear-gradient(180deg, rgba(95,227,255,0.16), rgba(95,227,255,0.04))"
+                : "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))",
+              color: isAllActive ? "var(--cyan)" : "var(--ink-4)",
+              cursor: "pointer",
+              boxShadow: isAllActive ? "0 0 12px rgba(95,227,255,0.10)" : "none",
+              transition: "all 0.12s ease",
+              padding: "7px 4px",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "7.5px", letterSpacing: "0.06em", textTransform: "uppercase", lineHeight: 1 }}>All</span>
+          </button>
+
+          {CATEGORY_CONFIG.map(({ cat, label, color, glow, icon }) => {
+            const isActive = activeCategories.includes(cat);
+            return (
+              <button
+                key={cat}
+                onClick={() => onToggleCategory(cat)}
+                aria-selected={isActive}
+                title={label}
+                style={{
+                  flex: 1, borderRadius: "9px",
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px",
+                  border: `1px solid ${isActive ? `color-mix(in srgb, ${color} 60%, transparent)` : "var(--line-2)"}`,
+                  background: isActive
+                    ? `linear-gradient(180deg, ${glow.replace("0.18", "0.08")}, rgba(255,255,255,0))`
+                    : "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))",
+                  color: isActive ? color : "var(--ink-4)",
+                  cursor: "pointer",
+                  boxShadow: isActive ? `0 0 12px ${glow}` : "none",
+                  transition: "all 0.12s ease",
+                  padding: "7px 4px",
+                }}
+              >
+                {icon}
+                <span style={{ fontFamily: "var(--mono)", fontSize: "7.5px", letterSpacing: "0.06em", textTransform: "uppercase", lineHeight: 1, color: isActive ? color : "var(--ink-4)" }}>
+                  {label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Search */}
-      <div className="flex-shrink-0" style={{ padding: "4px 14px 12px", borderBottom: "1px solid var(--line)" }}>
-        <div className="flex gap-2">
-          <div style={{ flex: 1, position: "relative" }}>
-            <svg
-              style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", width: "15px", height: "15px", color: "var(--ink-3)", pointerEvents: "none" }}
-              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            >
+      <div style={{ padding: "10px 12px", flexShrink: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "8px" }}>
+          <div style={{ position: "relative", display: "flex", alignItems: "center", background: "rgba(8,12,18,0.7)", border: "1px solid var(--line-2)", borderRadius: "10px", padding: "0 12px 0 34px", height: "36px", transition: "border-color 0.15s, box-shadow 0.15s" }}>
+            <svg style={{ position: "absolute", left: "11px", color: "var(--ink-4)", flexShrink: 0 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
             </svg>
             <input
-              className="input-glass"
               type="text"
               value={search}
               onChange={(e) => {
@@ -192,55 +338,45 @@ export default function ExplorerSidebar({
               onBlur={() => setTimeout(() => { setShowDropdown(false); setFocusedIdx(-1); }, 150)}
               onKeyDown={handleKeyDown}
               placeholder="Search cities or places…"
-              style={{ paddingLeft: "36px", height: "38px" }}
+              aria-label="Search for a city or place"
+              aria-autocomplete="list"
+              aria-expanded={showDropdown}
+              role="combobox"
+              style={{ appearance: "none", background: "transparent", border: 0, outline: 0, color: "var(--ink)", fontFamily: "var(--font)", fontSize: "13px", width: "100%" }}
             />
           </div>
           <button
             onClick={() => runSearch(search)}
             disabled={searchLoading || !search.trim()}
+            aria-label="Search"
             style={{
-              height: "38px", padding: "0 14px",
-              background: "linear-gradient(180deg, oklch(0.32 0.06 205), oklch(0.24 0.05 205))",
-              border: "1px solid oklch(0.55 0.12 205 / 0.6)",
-              color: "var(--cyan)", fontWeight: 600, fontSize: "13px",
+              height: "36px", padding: "0 14px",
+              background: "linear-gradient(180deg, rgba(95,227,255,0.18), rgba(95,227,255,0.06))",
+              border: "1px solid rgba(95,227,255,0.35)",
+              color: "var(--cyan)", fontFamily: "var(--mono)", fontWeight: 600, fontSize: "11px",
+              letterSpacing: "0.06em", textTransform: "uppercase",
               borderRadius: "10px", cursor: "pointer",
               opacity: (searchLoading || !search.trim()) ? 0.4 : 1,
-              transition: "opacity 150ms ease",
+              transition: "opacity 0.15s ease",
               flexShrink: 0,
             }}
           >
             {searchLoading ? (
-              <span className="w-4 h-4 rounded-full border-2 animate-spin block" style={{ borderColor: "var(--cyan)", borderTopColor: "transparent" }} />
+              <span className="animate-spin" style={{ display: "block", width: "14px", height: "14px", borderRadius: "50%", border: "2px solid var(--cyan)", borderTopColor: "transparent" }} />
             ) : "Go"}
           </button>
         </div>
 
-        {/* Search history dropdown */}
+        {/* History dropdown */}
         {isShowingHistory && (
-          <div style={{ marginTop: "8px", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "12px", overflow: "hidden" }}>
+          <div style={{ marginTop: "8px", background: "var(--panel-2)", border: "1px solid var(--line-2)", borderRadius: "10px", overflow: "hidden" }}>
             <div style={{ padding: "6px 12px 4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)" }}>Recent</span>
-              <button
-                onMouseDown={() => { clearHistory(); setSearchHistory([]); setShowDropdown(false); }}
-                style={{ fontSize: "10px", color: "var(--ink-4)", background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: "4px" }}
-              >
-                Clear
-              </button>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>Recent</span>
+              <button onMouseDown={() => { clearHistory(); setSearchHistory([]); setShowDropdown(false); }} style={{ fontSize: "10px", color: "var(--ink-4)", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}>Clear</button>
             </div>
             {searchHistory.map((item, i) => (
-              <button
-                key={i}
-                onMouseDown={() => selectHistoryItem(item)}
-                className="w-full text-left"
-                style={{
-                  padding: "8px 12px",
-                  borderTop: "1px solid var(--line)",
-                  display: "flex", alignItems: "center", gap: "8px",
-                  background: focusedIdx === i ? "oklch(0.28 0.04 250)" : "transparent",
-                  transition: "background 120ms ease",
-                  cursor: "pointer",
-                }}
-              >
+              <button key={i} onMouseDown={() => selectHistoryItem(item)} className="w-full text-left"
+                style={{ padding: "8px 12px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: "8px", background: focusedIdx === i ? "rgba(255,255,255,0.04)" : "transparent", cursor: "pointer" }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                 </svg>
@@ -252,29 +388,17 @@ export default function ExplorerSidebar({
 
         {/* Geocode results dropdown */}
         {isShowingResults && (
-          <div style={{ marginTop: "8px", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "12px", overflow: "hidden" }}>
+          <div style={{ marginTop: "8px", background: "var(--panel-2)", border: "1px solid var(--line-2)", borderRadius: "10px", overflow: "hidden" }}>
             {searchResults.map((r, i) => (
-              <button
-                key={i}
-                onMouseDown={() => selectResult(r)}
-                className="w-full text-left"
-                style={{
-                  padding: "10px 12px",
-                  borderBottom: i < searchResults.length - 1 ? "1px solid var(--line)" : "none",
-                  display: "flex", alignItems: "center", gap: "10px",
-                  background: focusedIdx === i ? "oklch(0.28 0.04 250)" : "transparent",
-                  transition: "background 120ms ease",
-                  cursor: "pointer",
-                }}
-                onMouseEnter={() => setFocusedIdx(i)}
-                onMouseLeave={() => setFocusedIdx(-1)}
-              >
+              <button key={i} onMouseDown={() => selectResult(r)} className="w-full text-left"
+                style={{ padding: "10px 12px", borderBottom: i < searchResults.length - 1 ? "1px solid var(--line)" : "none", display: "flex", alignItems: "center", gap: "10px", background: focusedIdx === i ? "rgba(255,255,255,0.04)" : "transparent", cursor: "pointer" }}
+                onMouseEnter={() => setFocusedIdx(i)} onMouseLeave={() => setFocusedIdx(-1)}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <circle cx="12" cy="10" r="3"/><path d="M12 22s-7-7-7-12a7 7 0 0 1 14 0c0 5-7 12-7 12Z"/>
                 </svg>
                 <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                   <span style={{ fontSize: "13px", color: "var(--ink)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
-                  {r.region && <span style={{ fontSize: "11px", color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.region}</span>}
+                  {r.region && <span style={{ fontSize: "11px", color: "var(--ink-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.region}</span>}
                 </span>
               </button>
             ))}
@@ -284,121 +408,110 @@ export default function ExplorerSidebar({
 
       {/* Error banner */}
       {error && (
-        <div
-          className="flex-shrink-0 flex items-center justify-between gap-2"
-          style={{ margin: "8px 14px 0", padding: "10px 12px", background: "oklch(0.28 0.10 22 / 0.12)", border: "1px solid oklch(0.5 0.12 22 / 0.3)", borderRadius: "10px" }}
-        >
+        <div style={{ margin: "0 12px 8px", padding: "10px 12px", background: "rgba(255,107,111,0.08)", border: "1px solid rgba(255,107,111,0.25)", borderRadius: "10px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
           <p style={{ fontSize: "12px", color: "var(--coral)", lineHeight: 1.5, flex: 1 }}>{error}</p>
           {onRetry && (
-            <button
-              onClick={onRetry}
-              style={{ color: "var(--coral)", fontSize: "11px", fontWeight: 600, flexShrink: 0, textDecoration: "underline", textUnderlineOffset: "2px", background: "none", border: "none", cursor: "pointer" }}
-            >
-              Retry
-            </button>
+            <button onClick={onRetry} style={{ color: "var(--coral)", fontSize: "11px", fontWeight: 600, flexShrink: 0, textDecoration: "underline", textUnderlineOffset: "2px", background: "none", border: "none", cursor: "pointer" }}>Retry</button>
           )}
         </div>
       )}
 
-      {/* Scrollable list */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Scrollable content */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
 
         {/* City insights card */}
-        {insightCityName && (insightsLoading || cityInsights) && (() => {
-          const slides = cityInsights ? [
-            { key: "about",   label: "About",     emoji: "📍", accent: "var(--coral)" },
-            { key: "known",   label: "Known for", emoji: "✨", accent: "var(--orchid)" },
-            { key: "history", label: "History",   emoji: "🏛️", accent: "var(--amber)" },
-            { key: "tip",     label: "Local tip", emoji: "💡", accent: "var(--mint)" },
-          ] : [];
-          const total = slides.length;
-          const goTo = (idx: number) => {
-            setSlideDir(idx > slide ? "right" : "left");
-            setSlide(idx);
-          };
+        {insightCityName && (insightsLoading || cityInsights) && (
+          <div style={{ margin: "0 10px 6px", borderRadius: "12px", border: "1px solid var(--line-2)", background: "linear-gradient(180deg, rgba(13,20,30,0.95), rgba(10,15,23,0.95))", overflow: "hidden" }}>
+            {/* Header */}
+            <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", borderBottom: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0 }}>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--coral)", boxShadow: "0 0 6px var(--coral)", flexShrink: 0, animation: "pulse 1.8s infinite" }} />
+                <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--coral)", flexShrink: 0 }}>Exploring</span>
+                <span style={{ width: "1px", height: "10px", background: "var(--line-2)", flexShrink: 0 }} />
+                <span style={{ fontWeight: 500, fontSize: "13px", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {insightCityName}
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+                {!insightsLoading && slides.length > 0 && (
+                  <>
+                    <button onClick={() => goTo((slide - 1 + slides.length) % slides.length)} aria-label="Previous slide"
+                      style={{ width: "22px", height: "22px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "11px" }}>‹</button>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "9px", color: "var(--ink-4)", minWidth: "20px", textAlign: "center" }} aria-live="polite">{slide + 1}/{slides.length}</span>
+                    <button onClick={() => goTo((slide + 1) % slides.length)} aria-label="Next slide"
+                      style={{ width: "22px", height: "22px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "11px" }}>›</button>
+                  </>
+                )}
+                <button onClick={() => setInsightsCollapsed((c) => !c)} aria-label={insightsCollapsed ? "Expand" : "Collapse"}
+                  style={{ width: "22px", height: "22px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "9px" }}>
+                  {insightsCollapsed ? "▼" : "▲"}
+                </button>
+              </div>
+            </div>
 
-          return (
-            <div style={{ margin: "8px 8px 4px", borderRadius: "14px", border: "1px solid var(--line)", background: "linear-gradient(180deg, var(--panel-2), var(--panel))", overflow: "hidden" }}>
-              {/* Header */}
-              <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
-                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--coral)", boxShadow: "0 0 6px var(--coral)", flexShrink: 0 }} />
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--coral)", flexShrink: 0 }}>Exploring</span>
-                  <span style={{ width: "1px", height: "10px", background: "var(--line)", flexShrink: 0 }} />
-                  <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "13px", letterSpacing: "-0.01em", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {insightCityName}
-                  </span>
+            {!insightsCollapsed && (
+              <>
+                {/* Slide body */}
+                <div style={{ padding: "12px 14px", minHeight: "90px" }}>
+                  {insightsLoading ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
+                        <div className="skeleton" style={{ width: "16px", height: "16px", borderRadius: "5px" }} />
+                        <div className="skeleton" style={{ width: "60px", height: "9px", borderRadius: "99px" }} />
+                      </div>
+                      <div className="skeleton" style={{ height: "9px", borderRadius: "99px", width: "100%" }} />
+                      <div className="skeleton" style={{ height: "9px", borderRadius: "99px", width: "85%" }} />
+                      <div className="skeleton" style={{ height: "9px", borderRadius: "99px", width: "65%" }} />
+                    </div>
+                  ) : cityInsights && slides[slide] ? (() => {
+                    const s = slides[slide];
+                    const animClass = slideDir === "right" ? "animate-slide-in-right" : "animate-slide-in-left";
+                    return (
+                      <div key={`${slide}-${insightCityName}`} className={animClass}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "8px" }}>
+                          <span style={{ width: "20px", height: "20px", borderRadius: "5px", background: s.bg, border: `1px solid ${s.color}44`, display: "grid", placeItems: "center", color: s.color, fontSize: "11px" }}>
+                            {s.key === "about" ? "📍" : s.key === "known" ? "✨" : s.key === "history" ? "🏛" : "💡"}
+                          </span>
+                          <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: s.color, fontWeight: 600 }}>{s.label}</span>
+                        </div>
+                        {s.key === "about" && <p style={{ fontSize: "12.5px", color: "var(--ink-2)", lineHeight: 1.55 }}>{cityInsights.overview}</p>}
+                        {s.key === "known" && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                            {cityInsights.highlights.map((h, i) => (
+                              <span key={i} style={{ padding: "4px 10px", borderRadius: "99px", fontSize: "11px", color: "var(--orchid)", background: "rgba(177,150,255,0.07)", border: "1px solid rgba(177,150,255,0.18)" }}>{h}</span>
+                            ))}
+                          </div>
+                        )}
+                        {s.key === "history" && <p style={{ fontSize: "12.5px", color: "var(--ink-2)", lineHeight: 1.55 }}>{cityInsights.historicalFact}</p>}
+                        {s.key === "tip" && <p style={{ fontSize: "12.5px", color: "var(--ink-2)", lineHeight: 1.55 }}>{cityInsights.localTip}</p>}
+                      </div>
+                    );
+                  })() : null}
                 </div>
-                {!insightsLoading && total > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
-                    <button onClick={() => goTo((slide - 1 + total) % total)} style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--ink-3)", cursor: "pointer", fontSize: "11px", transition: "background 120ms ease" }}>‹</button>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", color: "var(--ink-4)", minWidth: "24px", textAlign: "center" }}>{slide + 1}/{total}</span>
-                    <button onClick={() => goTo((slide + 1) % total)} style={{ width: "24px", height: "24px", borderRadius: "7px", display: "grid", placeItems: "center", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--ink-3)", cursor: "pointer", fontSize: "11px", transition: "background 120ms ease" }}>›</button>
+
+                {/* Dot indicators */}
+                {!insightsLoading && slides.length > 0 && (
+                  <div style={{ display: "flex", gap: "5px", justifyContent: "flex-start", padding: "0 14px 10px" }}>
+                    {slides.map((s, i) => (
+                      <button key={s.key} onClick={() => goTo(i)}
+                        style={{ width: i === slide ? "18px" : "5px", height: "3px", borderRadius: "2px", background: i === slide ? slides[slide].color : "rgba(255,255,255,0.08)", border: "none", padding: 0, cursor: "pointer", transition: "all 0.25s ease" }} />
+                    ))}
                   </div>
                 )}
-              </div>
-
-              {/* Slide */}
-              <div style={{ borderTop: "1px solid var(--line)" }}>
-                {insightsLoading ? (
-                  <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
-                      <div className="skeleton" style={{ width: "16px", height: "16px", borderRadius: "4px" }} />
-                      <div className="skeleton" style={{ width: "60px", height: "9px", borderRadius: "99px" }} />
-                    </div>
-                    <div className="skeleton" style={{ height: "9px", borderRadius: "99px", width: "100%" }} />
-                    <div className="skeleton" style={{ height: "9px", borderRadius: "99px", width: "85%" }} />
-                    <div className="skeleton" style={{ height: "9px", borderRadius: "99px", width: "70%" }} />
-                  </div>
-                ) : cityInsights && slides[slide] ? (() => {
-                  const s = slides[slide];
-                  const animClass = slideDir === "right" ? "animate-slide-in-right" : "animate-slide-in-left";
-                  return (
-                    <div key={`${slide}-${insightCityName}`} className={animClass} style={{ padding: "12px 14px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-                        <span style={{ fontSize: "13px" }}>{s.emoji}</span>
-                        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.02em", color: s.accent, textTransform: "uppercase" }}>{s.label}</span>
-                      </div>
-                      {s.key === "about" && <p style={{ fontSize: "12.5px", color: "var(--ink-2)", lineHeight: 1.6 }}>{cityInsights.overview}</p>}
-                      {s.key === "known" && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                          {cityInsights.highlights.map((h, i) => (
-                            <span key={i} style={{ padding: "4px 10px", borderRadius: "999px", fontSize: "11px", color: "var(--orchid)", background: "oklch(0.22 0.04 295 / 0.5)", border: "1px solid oklch(0.4 0.10 295 / 0.35)" }}>{h}</span>
-                          ))}
-                        </div>
-                      )}
-                      {s.key === "history" && <p style={{ fontSize: "12.5px", color: "var(--ink-2)", lineHeight: 1.6 }}>{cityInsights.historicalFact}</p>}
-                      {s.key === "tip" && <p style={{ fontSize: "12.5px", color: "var(--ink-2)", lineHeight: 1.6 }}>{cityInsights.localTip}</p>}
-                    </div>
-                  );
-                })() : null}
-              </div>
-
-              {/* Dot indicators */}
-              {!insightsLoading && total > 0 && (
-                <div style={{ display: "flex", justifyContent: "center", gap: "5px", padding: "6px 0 8px" }}>
-                  {slides.map((s, i) => (
-                    <button
-                      key={s.key}
-                      onClick={() => goTo(i)}
-                      style={{ width: i === slide ? "16px" : "5px", height: "5px", borderRadius: "99px", background: i === slide ? slides[slide].accent : "var(--line-2)", border: "none", padding: 0, cursor: "pointer", transition: "all 250ms ease" }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Loading skeletons */}
         {loading && (
           <div style={{ padding: "12px 10px", display: "flex", flexDirection: "column", gap: "4px" }}>
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "36px 1fr", gap: "10px", padding: "8px", alignItems: "center" }}>
-                <div className="skeleton" style={{ width: "36px", height: "36px", borderRadius: "10px" }} />
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "34px 1fr", gap: "10px", padding: "8px", alignItems: "center" }}>
+                <div className="skeleton" style={{ width: "34px", height: "34px", borderRadius: "9px" }} />
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <div className="skeleton" style={{ height: "12px", borderRadius: "99px", width: "75%" }} />
-                  <div className="skeleton" style={{ height: "10px", borderRadius: "99px", width: "50%" }} />
+                  <div className="skeleton" style={{ height: "11px", borderRadius: "99px", width: "70%" }} />
+                  <div className="skeleton" style={{ height: "9px", borderRadius: "99px", width: "50%" }} />
                 </div>
               </div>
             ))}
@@ -407,14 +520,12 @@ export default function ExplorerSidebar({
 
         {/* Empty state */}
         {!loading && filteredPois.length === 0 && !error && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", textAlign: "center", gap: "8px" }}>
-            <div style={{ width: "52px", height: "52px", borderRadius: "16px", marginBottom: "4px", display: "grid", placeItems: "center", fontSize: "24px", background: "var(--panel)", border: "1px solid var(--line)" }}>
-              🗺️
-            </div>
-            <p style={{ color: "var(--ink-2)", fontSize: "14px", fontWeight: 600, letterSpacing: "-0.01em" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px", textAlign: "center", gap: "8px" }}>
+            <div style={{ width: "48px", height: "48px", borderRadius: "14px", marginBottom: "4px", display: "grid", placeItems: "center", fontSize: "22px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line-2)" }}>🗺️</div>
+            <p style={{ color: "var(--ink-2)", fontSize: "13.5px", fontWeight: 600, letterSpacing: "-0.01em" }}>
               {search.trim() ? "No matches" : "No places found"}
             </p>
-            <p style={{ color: "var(--ink-3)", fontSize: "12px", lineHeight: 1.5 }}>
+            <p style={{ color: "var(--ink-4)", fontSize: "12px", lineHeight: 1.5 }}>
               {search.trim() ? "Try a different keyword" : "Move the map or search a city to load places"}
             </p>
           </div>
@@ -422,73 +533,65 @@ export default function ExplorerSidebar({
 
         {/* POI list */}
         {!loading && filteredPois.length > 0 && (
-          <div style={{ padding: "0 10px 18px" }}>
-            {/* Count label */}
-            <div style={{ padding: "8px 8px 4px", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)" }}>
-                {filteredPois.length} place{filteredPois.length !== 1 ? "s" : ""} nearby
+          <div>
+            <div style={{ padding: "10px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)" }}>
+                Places nearby
               </span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "9.5px", color: "var(--ink)", letterSpacing: "0.06em" }}>{filteredPois.length}</span>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            <div style={{ padding: "0 8px 18px", display: "flex", flexDirection: "column", gap: "2px" }}>
               {filteredPois.map((poi, i) => {
-                const cfg = CATEGORY_CONFIG[poi.category];
+                const cfg = POI_COLORS[poi.category] ?? { color: "var(--cyan)", bg: "var(--cyan-dim)", border: "rgba(95,227,255,0.22)" };
                 const fav = isFavorite(poi.id);
                 return (
                   <div
                     key={poi.id}
                     className={`group animate-fade-in stagger-${Math.min(i + 1, 5)}`}
                     style={{
-                      display: "grid", gridTemplateColumns: "36px 1fr auto",
+                      display: "grid", gridTemplateColumns: "34px 1fr auto",
                       alignItems: "center", gap: "10px",
-                      padding: "8px", borderRadius: "10px",
+                      padding: "9px 8px", borderRadius: "9px",
                       cursor: "pointer", border: "1px solid transparent",
-                      transition: "background 120ms ease",
+                      transition: "background 0.12s ease, border-color 0.12s ease",
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "oklch(0.24 0.03 250)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.025)";
+                      (e.currentTarget as HTMLElement).style.borderColor = "var(--line-2)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.background = "transparent";
+                      (e.currentTarget as HTMLElement).style.borderColor = "transparent";
+                    }}
                     onClick={() => onPoiClick(poi)}
                   >
-                    {/* Category icon */}
-                    <div style={{ width: "36px", height: "36px", borderRadius: "10px", display: "grid", placeItems: "center", background: `${cfg.markerColor}22`, border: `1px solid ${cfg.markerColor}44`, fontSize: "16px", flexShrink: 0 }}>
-                      {cfg.emoji}
+                    <div style={{ width: "34px", height: "34px", borderRadius: "9px", display: "grid", placeItems: "center", background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, flexShrink: 0 }}>
+                      {poi.category === "restaurant" ? "🍽️" : poi.category === "cafe" ? "☕" : poi.category === "attraction" ? "🎭" : poi.category === "park" ? "🌳" : "🏛️"}
                     </div>
-
-                    {/* Info */}
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: "13.5px", fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
-                        {poi.name}
-                      </p>
-                      <p style={{ fontSize: "11.5px", color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "1px" }}>
-                        {poi.address}
-                      </p>
-                      {poi.rating && (
-                        <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "2px" }}>
-                          <span style={{ color: "var(--gold)", fontSize: "10px" }}>★</span>
-                          <span style={{ fontSize: "10px", color: "var(--ink-3)" }}>{poi.rating.toFixed(1)}</span>
-                        </div>
-                      )}
+                      <p style={{ fontSize: "13px", fontWeight: 500, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.005em" }}>{poi.name}</p>
+                      <p style={{ fontSize: "11.5px", color: "var(--ink-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "1px" }}>{poi.address}</p>
                     </div>
-
-                    {/* Actions */}
                     <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
-                      {/* Favorite: always visible when active, otherwise on hover */}
                       <button
                         onClick={(e) => { e.stopPropagation(); fav ? removeFavorite(poi.id) : addFavorite(poi); }}
-                        className={fav ? undefined : "opacity-0 group-hover:opacity-100 transition-opacity"}
-                        style={{ padding: "6px", borderRadius: "8px", fontSize: "13px", color: fav ? "var(--coral)" : "var(--ink-3)", background: "transparent", border: "none", cursor: "pointer", transition: "color 120ms ease" }}
+                        className={fav ? undefined : "sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"}
+                        style={{ padding: "5px", borderRadius: "6px", fontSize: "12px", color: fav ? "var(--coral)" : "var(--ink-4)", background: "transparent", border: "none", cursor: "pointer" }}
                         title={fav ? "Remove from favorites" : "Add to favorites"}
+                        aria-label={fav ? `Remove ${poi.name} from favorites` : `Add ${poi.name} to favorites`}
+                        aria-pressed={fav}
                       >
                         {fav ? "♥" : "♡"}
                       </button>
-                      {/* Add to planner: show on hover */}
                       <button
                         onClick={(e) => { e.stopPropagation(); onAddToPlanner(poi); }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ padding: "5px 7px", borderRadius: "8px", fontSize: "14px", fontWeight: 700, color: "var(--ink-3)", background: "transparent", border: "none", cursor: "pointer", transition: "color 120ms ease" }}
+                        className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                        style={{ padding: "4px 6px", borderRadius: "6px", fontSize: "13px", fontWeight: 700, color: "var(--ink-4)", background: "transparent", border: "none", cursor: "pointer", transition: "color 0.12s ease" }}
                         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--cyan)"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--ink-3)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--ink-4)"; }}
                         title="Add to planner"
+                        aria-label={`Add ${poi.name} to planner`}
                       >
                         +
                       </button>
@@ -503,3 +606,6 @@ export default function ExplorerSidebar({
     </div>
   );
 }
+
+const ExplorerSidebar = memo(ExplorerSidebarInner);
+export default ExplorerSidebar;

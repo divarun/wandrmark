@@ -7,7 +7,6 @@ import { computeRoute } from "@/services/routing";
 import { useGamification } from "@/contexts/GamificationContext";
 
 import Navbar from "@/components/Navbar";
-import CategoryFilter from "@/components/CategoryFilter";
 import ExplorerSidebar from "@/components/ExplorerSidebar";
 import PlannerSidebar from "@/components/PlannerSidebar";
 import AIRecommendPanel from "@/components/AIRecommendPanel";
@@ -81,9 +80,23 @@ export default function Home() {
     const urlCenter = readURLCenter();
     return urlCenter ?? loadSavedCenter() ?? { lat: 40.7128, lng: -74.006 };
   });
-  const [rightPanel, setRightPanel] = useState<"passport" | "ai" | null>(null);
   const [levelUpData, setLevelUpData] = useState<{ level: number; title: ExplorerTitle } | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Left rail: mobile bottom sheet state
+  const [leftSheetOpen, setLeftSheetOpen] = useState(false);
+  // Right rail: tablet/mobile drawer state
+  const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
+  // AI panel (planner mode only)
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // Track mobile breakpoint reactively
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 720px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const { pois, loading, error, activeCategories, toggleCategory, selectAllCategories, load } = usePOIs();
   const { visitPOI, progress, visitedPoiIds, saveTripMemory } = useGamification();
@@ -120,7 +133,7 @@ export default function Home() {
 
   const handlePoiClick = useCallback(async (poi: POI) => {
     setSelectedPoi(poi);
-    setSidebarOpen(false);
+    setLeftSheetOpen(false);
     const result = await visitPOI(poi);
 
     if (!result.isNew) return;
@@ -149,7 +162,7 @@ export default function Home() {
     saveCenter(newCenter);
     updateURLCenter(newCenter);
     load(newCenter);
-    setSidebarOpen(false);
+    setLeftSheetOpen(false);
   }, [load]);
 
   const addToPlanner = useCallback((poi: POI | Partial<POI>) => {
@@ -213,22 +226,16 @@ export default function Home() {
   }, [plannerPois]);
 
   useEffect(() => {
-    if (mode === "explorer" && rightPanel === "ai") setRightPanel(null);
-  }, [mode, rightPanel]);
+    if (mode === "explorer") setAiPanelOpen(false);
+  }, [mode]);
 
-  const handleToggleRightPanel = useCallback((panel: "passport" | "ai") => {
-    setRightPanel((prev) => (prev === panel ? null : panel));
+  const handleToggleRightDrawer = useCallback(() => {
+    setRightDrawerOpen((prev) => !prev);
   }, []);
 
-  // Mobile bottom nav: tap active mode button to toggle sidebar; tap inactive to switch + open
-  const handleMobileNavMode = useCallback((newMode: "explorer" | "planner") => {
-    if (mode === newMode) {
-      setSidebarOpen((prev) => !prev);
-    } else {
-      setMode(newMode);
-      setSidebarOpen(true);
-    }
-  }, [mode]);
+  const handleToggleAI = useCallback(() => {
+    setAiPanelOpen((prev) => !prev);
+  }, []);
 
   const sidebarContent = mode === "explorer" ? (
     <ExplorerSidebar
@@ -239,6 +246,9 @@ export default function Home() {
       onSearchResult={handleSearchResult}
       onAddToPlanner={addToPlanner}
       onRetry={() => load(mapCenter)}
+      activeCategories={activeCategories}
+      onToggleCategory={toggleCategory}
+      onSelectAllCategories={selectAllCategories}
     />
   ) : (
     <PlannerSidebar
@@ -258,21 +268,9 @@ export default function Home() {
     />
   );
 
-  const rightPanelContent = (
-    <>
-      {rightPanel === "passport" && <PassportPanel />}
-      {rightPanel === "ai" && mode === "planner" && (
-        <AIRecommendPanel selectedPois={plannerPois} onAddToPlanner={addToPlanner} />
-      )}
-    </>
-  );
-
   return (
-    <div className="min-h-screen h-screen overflow-hidden flex flex-col" style={{ background: "var(--bg)" }}>
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{ background: "radial-gradient(1200px 700px at 50% -200px, oklch(0.28 0.08 230 / 0.3), transparent 60%)" }}
-      />
+    <div className="app-layout">
+      <a className="skip-link" href="#map">Skip to map</a>
 
       <AchievementToast />
 
@@ -284,13 +282,6 @@ export default function Home() {
         />
       )}
 
-      <Navbar
-        mode={mode}
-        onModeChange={setMode}
-        rightPanel={rightPanel}
-        onToggleRightPanel={handleToggleRightPanel}
-      />
-
       {selectedPoi && (
         <POIDetailCard
           poi={selectedPoi}
@@ -299,86 +290,62 @@ export default function Home() {
         />
       )}
 
-      {/* Mobile sidebar drawer */}
-      {sidebarOpen && (
-        <div className="md:hidden fixed inset-0 z-[35] flex">
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => setSidebarOpen(false)}
+      {/* Topbar */}
+      <Navbar
+        mode={mode}
+        onModeChange={setMode}
+        rightDrawerOpen={rightDrawerOpen}
+        onToggleRightDrawer={handleToggleRightDrawer}
+      />
+
+      {/* Main stage */}
+      <div className="app-stage">
+        {/* Backdrop for drawers */}
+        <div
+          className="drawer-backdrop"
+          data-open={rightDrawerOpen || (leftSheetOpen && isMobile) ? "true" : "false"}
+          onClick={() => {
+            setRightDrawerOpen(false);
+            setLeftSheetOpen(false);
+          }}
+          aria-hidden="true"
+        />
+
+        {/* Left rail */}
+        <aside
+          className="left-rail"
+          id="leftRail"
+          data-open={leftSheetOpen ? "true" : "false"}
+          aria-label="Places and exploration"
+        >
+          {/* Sheet handle (mobile only) */}
+          <button
+            className="sheet-handle"
+            onClick={() => setLeftSheetOpen((prev) => !prev)}
+            aria-label="Toggle places panel"
+            aria-controls="leftRail"
+            aria-expanded={leftSheetOpen}
           />
-          <div className="relative w-72 max-w-[85vw] flex flex-col h-full animate-slide-in-left" style={{ background: "var(--bg-2)", borderRight: "1px solid var(--line)" }}>
-            <div className="flex-shrink-0 flex items-center gap-2" style={{ padding: "10px 12px", borderBottom: "1px solid var(--line)" }}>
-              <div className="flex-1 min-w-0">
-                <CategoryFilter active={activeCategories} onToggle={toggleCategory} onSelectAll={selectAllCategories} />
-              </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="w-7 h-7 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-slate-400 hover:text-white text-sm flex-shrink-0"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              {sidebarContent}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Mobile right panel (bottom sheet) */}
-      {rightPanel !== null && (
-        <div className="md:hidden fixed inset-0 z-[35] flex flex-col justify-end">
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => handleToggleRightPanel(rightPanel)}
-          />
-          <div
-            className="relative flex flex-col overflow-hidden animate-slide-up"
-            style={{
-              maxHeight: "82vh",
-              background: "var(--bg-2)",
-              borderTop: "1px solid var(--line)",
-              borderRadius: "20px 20px 0 0",
-              marginBottom: "56px",
-            }}
-          >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-              <div style={{ width: "40px", height: "4px", borderRadius: "99px", background: "oklch(0.40 0.03 250)" }} />
-            </div>
-            {/* Scrollable content — PassportPanel uses flex-col h-full internally */}
-            <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
-              {rightPanelContent}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main layout */}
-      <div className="flex flex-1 pt-14 pb-14 md:pb-0 overflow-hidden relative">
-
-        {/* Desktop left sidebar */}
-        <div className="hidden md:flex w-80 flex-shrink-0 flex-col relative z-10 overflow-hidden" style={{ background: "linear-gradient(180deg, var(--bg-2), var(--bg))", borderRight: "1px solid var(--line)" }}>
-          <div className="flex-shrink-0" style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-            <CategoryFilter active={activeCategories} onToggle={toggleCategory} onSelectAll={selectAllCategories} />
-          </div>
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
-            {sidebarContent}
-          </div>
-        </div>
+          {sidebarContent}
+        </aside>
 
         {/* Map */}
-        <div className="flex-1 relative overflow-hidden">
+        <main className="map-wrap" id="map" role="application" aria-label="Explore map">
           {plannerPois.length > 0 && mode === "explorer" && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+            <div style={{ position: "absolute", top: "14px", left: "50%", transform: "translateX(-50%)", zIndex: 400, pointerEvents: "auto" }}>
               <button
                 onClick={() => setMode("planner")}
-                className="glass rounded-full px-4 py-1.5 border border-ocean-500/[0.4] bg-ocean-500/[0.18] shadow-glow flex items-center gap-2 hover:bg-ocean-500/[0.28] transition-all"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "8px",
+                  padding: "7px 14px", borderRadius: "99px",
+                  background: "rgba(10,15,23,0.85)", backdropFilter: "blur(8px)",
+                  border: "1px solid rgba(95,227,255,0.35)",
+                  color: "var(--cyan)", fontSize: "12px", fontFamily: "var(--mono)",
+                  fontWeight: 600, letterSpacing: "0.06em", cursor: "pointer",
+                }}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-ocean-400 animate-pulse" />
-                <span className="text-ocean-300 text-xs font-semibold">
-                  {plannerPois.length} stop{plannerPois.length !== 1 ? "s" : ""} · View Route
-                </span>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--cyan)", animation: "pulse 1.8s infinite" }} />
+                {plannerPois.length} stop{plannerPois.length !== 1 ? "s" : ""} · VIEW ROUTE
               </button>
             </div>
           )}
@@ -395,61 +362,60 @@ export default function Home() {
             visitedPoiIds={visitedPoiIds}
             cityName={pois.length > 0 ? deriveCityName(pois) : undefined}
           />
-        </div>
+        </main>
 
-        {/* Desktop right panel */}
-        {rightPanel !== null && (
-          <div className="hidden md:flex w-80 flex-shrink-0 right-panel relative z-10 overflow-hidden flex-col">
-            {rightPanelContent}
-          </div>
-        )}
-      </div>
-
-      {/* Mobile bottom navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-2xl" style={{ background: "oklch(0.18 0.028 250 / 0.96)", borderTop: "1px solid var(--line)" }}>
-        <div className="flex items-center justify-around px-2 py-2">
-          <button
-            onClick={() => handleMobileNavMode("explorer")}
-            className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl text-[10px] font-semibold transition-colors ${
-              mode === "explorer" ? "text-ocean-300" : "text-slate-500"
-            }`}
-          >
-            <span className="text-lg">🧭</span>
-            <span>Explore</span>
-          </button>
-
-          <button
-            onClick={() => handleMobileNavMode("planner")}
-            className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl text-[10px] font-semibold transition-colors ${
-              mode === "planner" ? "text-coral-400" : "text-slate-500"
-            }`}
-          >
-            <span className="text-lg">🗺️</span>
-            <span>Plan</span>
-          </button>
-
-          <button
-            onClick={() => handleToggleRightPanel("passport")}
-            className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl text-[10px] font-semibold transition-colors ${
-              rightPanel === "passport" ? "text-ocean-300" : "text-slate-500"
-            }`}
-          >
-            <span className="text-lg">📖</span>
-            <span>Passport</span>
-          </button>
-
-          {mode === "planner" && (
+        {/* Right rail — always on desktop, drawer on tablet/mobile */}
+        <aside
+          className="right-rail"
+          id="rightRail"
+          data-open={rightDrawerOpen ? "true" : "false"}
+          aria-label="Explorer passport and stats"
+        >
+          {/* Passport / AI toggle header */}
+          <div style={{ display: "flex", gap: "6px", padding: "8px 10px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
             <button
-              onClick={() => handleToggleRightPanel("ai")}
-              className={`flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl text-[10px] font-semibold transition-colors ${
-                rightPanel === "ai" ? "text-purple-300" : "text-slate-500"
-              }`}
+              onClick={() => setAiPanelOpen(false)}
+              style={{
+                flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                padding: "7px 10px", borderRadius: "8px", cursor: "pointer",
+                border: `1px solid ${!aiPanelOpen ? "rgba(95,227,255,0.35)" : "var(--line-2)"}`,
+                background: !aiPanelOpen ? "linear-gradient(180deg, rgba(95,227,255,0.14), rgba(95,227,255,0.04))" : "rgba(8,12,18,0.5)",
+                color: !aiPanelOpen ? "var(--cyan)" : "var(--ink-3)",
+                fontFamily: "var(--font)", fontWeight: 500, fontSize: "12px",
+                transition: "all 0.12s ease",
+              }}
             >
-              <span className="text-lg">✨</span>
-              <span>AI</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 11h20"/><circle cx="7" cy="8" r="1" fill="currentColor"/><circle cx="11" cy="8" r="1" fill="currentColor"/>
+              </svg>
+              Passport
             </button>
+            <button
+              onClick={() => { setAiPanelOpen(true); if (mode === "explorer") setMode("planner"); }}
+              style={{
+                flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                padding: "7px 10px", borderRadius: "8px", cursor: "pointer",
+                border: `1px solid ${aiPanelOpen ? "rgba(177,150,255,0.35)" : "var(--line-2)"}`,
+                background: aiPanelOpen ? "linear-gradient(180deg, rgba(177,150,255,0.14), rgba(177,150,255,0.04))" : "rgba(8,12,18,0.5)",
+                color: aiPanelOpen ? "var(--orchid)" : "var(--ink-3)",
+                fontFamily: "var(--font)", fontWeight: 500, fontSize: "12px",
+                transition: "all 0.12s ease",
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/>
+                <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/>
+              </svg>
+              AI
+            </button>
+          </div>
+
+          {aiPanelOpen ? (
+            <AIRecommendPanel selectedPois={plannerPois} onAddToPlanner={addToPlanner} />
+          ) : (
+            <PassportPanel />
           )}
-        </div>
+        </aside>
       </div>
     </div>
   );

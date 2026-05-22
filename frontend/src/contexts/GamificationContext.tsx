@@ -61,10 +61,9 @@ export function GamificationProvider({ children }: { children: React.ReactNode }
 
   const visitPOI = useCallback(async (poi: POI): Promise<VisitResult> => {
     const result = await gamificationService.visitPOI(poi);
-    setProgress(gamificationService.getProgress());
-    setVisitedPoiIds(gamificationService.getVisitedPOIIds());
+    refresh();
     return result;
-  }, []);
+  }, [refresh]);
 
   const openMysteryBox = useCallback((id: string) => {
     gamificationService.openMysteryBox(id);

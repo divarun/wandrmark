@@ -1,38 +1,83 @@
 import { Router, Response, Request } from "express";
+import { z } from "zod";
 import { generateRecommendations, generateTravelTips, generateNeighborhoodFact, generateCitySummary, generateHistoricalContext, generateCityInsights } from "../services/nim";
 import { getCache, setCache, CACHE_TTL, CacheKeys } from "../services/cache";
 
 const router = Router();
 
-// POST /ai/recommendations — no auth required, with caching
+// ─── Validation schemas ───────────────────────────────────────────────────────
+
+const POIItemSchema = z.object({
+  name: z.string().min(1).max(200),
+  category: z.string().max(50).optional().default("attraction"),
+  address: z.string().max(500).optional().default(""),
+});
+
+const RecommendationsSchema = z.object({
+  selectedPois: z.array(POIItemSchema).min(1).max(20),
+  userPreferences: z.string().max(500).optional(),
+  mood: z.string().max(50).optional(),
+});
+
+const TravelTipsSchema = z.object({
+  poi: z.object({
+    name: z.string().min(1).max(200),
+    category: z.string().max(50).optional().default("attraction"),
+    address: z.string().max(500).optional().default(""),
+  }),
+});
+
+const NeighborhoodFactSchema = z.object({
+  neighborhood: z.string().min(1).max(100),
+  city: z.string().min(1).max(100),
+});
+
+const CitySummarySchema = z.object({
+  cityName: z.string().min(1).max(100),
+  neighborhoodsVisited: z.array(z.string().max(100)).max(50),
+  poisVisited: z.number().int().min(0).max(10000),
+});
+
+const HistoricalContextSchema = z.object({
+  name: z.string().min(1).max(200),
+  category: z.string().min(1).max(50),
+  address: z.string().min(1).max(500),
+});
+
+const CityInsightsSchema = z.object({
+  cityName: z.string().min(1).max(100),
+});
+
+function validationError(res: Response, err: z.ZodError): void {
+  res.status(400).json({ error: "Invalid request", details: err.issues.map(i => i.message) });
+}
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+
+// POST /ai/recommendations
 router.post("/recommendations", async (req: Request, res: Response) => {
+  const parsed = RecommendationsSchema.safeParse(req.body);
+  if (!parsed.success) { validationError(res, parsed.error); return; }
+
+  const { selectedPois, userPreferences, mood } = parsed.data;
   try {
-    const { selectedPois, userPreferences, mood } = req.body;
-
-    if (!Array.isArray(selectedPois) || selectedPois.length === 0) {
-      res.status(400).json({ error: "selectedPois array with at least one item is required." });
-      return;
-    }
-
-    // Generate cache key from POIs, preferences, and mood
     const cacheKey = CacheKeys.aiRecommendations(
       JSON.stringify(selectedPois),
       `${userPreferences || ''}:${mood || ''}`
     );
-
-    // Check cache
-    const cachedRecs = await getCache(cacheKey);
-    if (cachedRecs) {
+    const cached = await getCache(cacheKey);
+    if (cached) {
       console.log('[CACHE HIT] AI recommendations');
-      return res.json({ recommendations: cachedRecs, cached: true });
+      return res.json({ recommendations: cached, cached: true });
     }
 
     console.log('[CACHE MISS] AI recommendations - generating');
-    const recommendations = await generateRecommendations(selectedPois, userPreferences, mood);
-
-    // Cache the recommendations
+    const recommendations = await generateRecommendations(
+      selectedPois as { name: string; category: string; address: string }[],
+      userPreferences,
+      mood
+    );
     await setCache(cacheKey, recommendations, CACHE_TTL.AI_RECOMMENDATIONS);
-
     res.json({ recommendations, cached: false });
   } catch (err) {
     console.error("[AI] Recommendations error:", err);
@@ -41,32 +86,23 @@ router.post("/recommendations", async (req: Request, res: Response) => {
   }
 });
 
-// POST /ai/travel-tips — no auth required, with caching
+// POST /ai/travel-tips
 router.post("/travel-tips", async (req: Request, res: Response) => {
+  const parsed = TravelTipsSchema.safeParse(req.body);
+  if (!parsed.success) { validationError(res, parsed.error); return; }
+
+  const { poi } = parsed.data;
   try {
-    const { poi } = req.body;
-
-    if (!poi || !poi.name) {
-      res.status(400).json({ error: "POI object with name is required." });
-      return;
-    }
-
-    // Generate cache key
-    const cacheKey = CacheKeys.aiTips(poi.name, poi.category || 'attraction', poi.address || '');
-
-    // Check cache
-    const cachedTips = await getCache(cacheKey);
-    if (cachedTips) {
+    const cacheKey = CacheKeys.aiTips(poi.name, poi.category, poi.address);
+    const cached = await getCache(cacheKey);
+    if (cached) {
       console.log('[CACHE HIT] AI travel tips');
-      return res.json({ ...cachedTips, cached: true });
+      return res.json({ ...cached as object, cached: true });
     }
 
     console.log('[CACHE MISS] AI travel tips - generating');
-    const tips = await generateTravelTips(poi);
-
-    // Cache the tips
+    const tips = await generateTravelTips(poi as { name: string; category: string; address: string });
     await setCache(cacheKey, tips, CACHE_TTL.AI_TIPS);
-
     res.json({ ...tips, cached: false });
   } catch (err) {
     console.error("[AI] Travel tips error:", err);
@@ -75,164 +111,104 @@ router.post("/travel-tips", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /ai/neighborhood-fact
- * Generate a unique fact about a neighborhood for stamp collection (with caching)
- */
+// POST /ai/neighborhood-fact
 router.post("/neighborhood-fact", async (req: Request, res: Response) => {
+  const parsed = NeighborhoodFactSchema.safeParse(req.body);
+  if (!parsed.success) { validationError(res, parsed.error); return; }
+
+  const { neighborhood, city } = parsed.data;
   try {
-    const { neighborhood, city } = req.body;
-
-    if (!neighborhood || !city) {
-      return res.status(400).json({
-        error: "Missing required fields: neighborhood and city"
-      });
-    }
-
-    // Generate cache key
     const cacheKey = CacheKeys.aiNeighborhoodFact(neighborhood, city);
-
-    // Check cache first - neighborhood facts are stable
-    const cachedFact = await getCache<string>(cacheKey);
-    if (cachedFact) {
+    const cached = await getCache<string>(cacheKey);
+    if (cached) {
       console.log('[CACHE HIT] AI neighborhood fact');
-      return res.json({
-        fact: cachedFact,
-        neighborhood,
-        city,
-        generatedAt: new Date().toISOString(),
-        cached: true
-      });
+      return res.json({ fact: cached, neighborhood, city, generatedAt: new Date().toISOString(), cached: true });
     }
 
     console.log('[CACHE MISS] AI neighborhood fact - generating');
     const fact = await generateNeighborhoodFact(neighborhood, city);
-
-    // Cache for 7 days since neighborhood facts don't change
     await setCache(cacheKey, fact, CACHE_TTL.AI_NEIGHBORHOOD);
-
-    res.json({
-      fact,
-      neighborhood,
-      city,
-      generatedAt: new Date().toISOString(),
-      cached: false
-    });
-  } catch (error) {
-    console.error("Error generating neighborhood fact:", error);
+    res.json({ fact, neighborhood, city, generatedAt: new Date().toISOString(), cached: false });
+  } catch (err) {
+    console.error("Error generating neighborhood fact:", err);
     res.status(500).json({
       error: "Failed to generate neighborhood fact",
-      fallback: `${req.body.neighborhood} is a vibrant area in ${req.body.city} with unique character.`
+      fallback: `${neighborhood} is a vibrant area in ${city} with unique character.`,
     });
   }
 });
 
-/**
- * POST /ai/city-summary
- * Generate a personalized city exploration summary
- */
+// POST /ai/city-summary
 router.post("/city-summary", async (req: Request, res: Response) => {
+  const parsed = CitySummarySchema.safeParse(req.body);
+  if (!parsed.success) { validationError(res, parsed.error); return; }
+
+  const { cityName, neighborhoodsVisited, poisVisited } = parsed.data;
   try {
-    const { cityName, neighborhoodsVisited, poisVisited } = req.body;
-
-    if (!cityName || !Array.isArray(neighborhoodsVisited) || typeof poisVisited !== 'number') {
-      return res.status(400).json({
-        error: "Missing required fields: cityName, neighborhoodsVisited (array), poisVisited (number)"
-      });
-    }
-
     const cacheKey = CacheKeys.aiCitySummary(cityName, neighborhoodsVisited);
-    const cachedSummary = await getCache<string>(cacheKey);
-    if (cachedSummary) {
+    const cached = await getCache<string>(cacheKey);
+    if (cached) {
       console.log('[CACHE HIT] AI city summary');
-      return res.json({ summary: cachedSummary, cityName, neighborhoodsVisited: neighborhoodsVisited.length, poisVisited, generatedAt: new Date().toISOString(), cached: true });
+      return res.json({ summary: cached, cityName, neighborhoodsVisited: neighborhoodsVisited.length, poisVisited, generatedAt: new Date().toISOString(), cached: true });
     }
 
     console.log('[CACHE MISS] AI city summary - generating');
     const summary = await generateCitySummary(cityName, neighborhoodsVisited, poisVisited);
     await setCache(cacheKey, summary, CACHE_TTL.AI_CITY_SUMMARY);
-
-    res.json({
-      summary,
-      cityName,
-      neighborhoodsVisited: neighborhoodsVisited.length,
-      poisVisited,
-      generatedAt: new Date().toISOString(),
-      cached: false,
-    });
-  } catch (error) {
-    console.error("Error generating city summary:", error);
+    res.json({ summary, cityName, neighborhoodsVisited: neighborhoodsVisited.length, poisVisited, generatedAt: new Date().toISOString(), cached: false });
+  } catch (err) {
+    console.error("Error generating city summary:", err);
     res.status(500).json({
       error: "Failed to generate city summary",
-      fallback: `You've explored ${req.body.neighborhoodsVisited?.length || 0} neighborhoods in ${req.body.cityName}!`
+      fallback: `You've explored ${neighborhoodsVisited.length} neighborhoods in ${cityName}!`,
     });
   }
 });
 
-/**
- * POST /ai/historical-context
- * Generate historical context for a POI
- */
+// POST /ai/historical-context
 router.post("/historical-context", async (req: Request, res: Response) => {
+  const parsed = HistoricalContextSchema.safeParse(req.body);
+  if (!parsed.success) { validationError(res, parsed.error); return; }
+
+  const { name, category, address } = parsed.data;
   try {
-    const { name, category, address } = req.body;
-
-    if (!name || !category || !address) {
-      return res.status(400).json({
-        error: "Missing required fields: name, category, address"
-      });
-    }
-
     const cacheKey = CacheKeys.aiHistoricalContext(name, category, address);
-    const cachedContext = await getCache<string>(cacheKey);
-    if (cachedContext) {
+    const cached = await getCache<string>(cacheKey);
+    if (cached) {
       console.log('[CACHE HIT] AI historical context');
-      return res.json({ context: cachedContext, poi: { name, category, address }, generatedAt: new Date().toISOString(), cached: true });
+      return res.json({ context: cached, poi: { name, category, address }, generatedAt: new Date().toISOString(), cached: true });
     }
 
     console.log('[CACHE MISS] AI historical context - generating');
     const context = await generateHistoricalContext({ name, category, address });
     await setCache(cacheKey, context, CACHE_TTL.AI_HISTORICAL);
-
-    res.json({
-      context,
-      poi: { name, category, address },
-      generatedAt: new Date().toISOString(),
-      cached: false,
-    });
-  } catch (error) {
-    console.error("Error generating historical context:", error);
+    res.json({ context, poi: { name, category, address }, generatedAt: new Date().toISOString(), cached: false });
+  } catch (err) {
+    console.error("Error generating historical context:", err);
     res.status(500).json({
       error: "Failed to generate historical context",
-      fallback: `${req.body.name} is a notable ${req.body.category} in this area.`
+      fallback: `${name} is a notable ${category} in this area.`,
     });
   }
 });
 
-/**
- * POST /ai/city-insights
- * Generate rich travel insights for a city (cached 7 days, pre-warmed by cron)
- */
+// POST /ai/city-insights
 router.post("/city-insights", async (req: Request, res: Response) => {
+  const parsed = CityInsightsSchema.safeParse(req.body);
+  if (!parsed.success) { validationError(res, parsed.error); return; }
+
+  const { cityName } = parsed.data;
   try {
-    const { cityName } = req.body;
-
-    if (!cityName || typeof cityName !== "string" || !cityName.trim()) {
-      res.status(400).json({ error: "cityName (string) is required." });
-      return;
-    }
-
     const cacheKey = CacheKeys.aiCityInsights(cityName);
     const cached = await getCache(cacheKey);
     if (cached) {
       console.log(`[CACHE HIT] AI city insights: ${cityName}`);
-      return res.json({ ...cached, cached: true });
+      return res.json({ ...cached as object, cached: true });
     }
 
     console.log(`[CACHE MISS] AI city insights - generating: ${cityName}`);
     const insights = await generateCityInsights(cityName.split(",")[0].trim());
     await setCache(cacheKey, insights, CACHE_TTL.AI_CITY_INSIGHTS);
-
     res.json({ ...insights, cached: false });
   } catch (err) {
     console.error("[AI] City insights error:", err);

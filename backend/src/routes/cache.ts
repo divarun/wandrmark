@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+import crypto from "crypto";
 import { deleteCachePattern, checkRedisHealth } from "../services/cache";
+import { getAllUsage, getIpUsage } from "../services/usage";
 import { warmGeocodingCache } from "../scripts/warmGeocoding";
 import { warmMajorCities } from "../scripts/warmCache";
 
@@ -9,7 +11,13 @@ function checkWarmSecret(req: Request, res: Response): boolean {
   const secret = process.env.CACHE_WARM_SECRET;
   if (!secret) return true; // not configured — allow (dev mode)
   const provided = req.headers["x-cache-secret"];
-  if (provided !== secret) {
+  if (typeof provided !== "string") {
+    res.status(401).json({ error: "Invalid or missing x-cache-secret header" });
+    return false;
+  }
+  const secretBuf = Buffer.from(secret, "utf8");
+  const providedBuf = Buffer.from(provided, "utf8");
+  if (secretBuf.length !== providedBuf.length || !crypto.timingSafeEqual(secretBuf, providedBuf)) {
     res.status(401).json({ error: "Invalid or missing x-cache-secret header" });
     return false;
   }
@@ -61,6 +69,28 @@ router.delete("/clear", async (req: Request, res: Response) => {
     res.json({ success: true, deletedCount: count });
   } catch (err) {
     res.status(500).json({ error: "Failed to clear cache" });
+  }
+});
+
+// GET /cache/usage — all IPs (requires warm secret)
+router.get("/usage", async (req: Request, res: Response) => {
+  if (!checkWarmSecret(req, res)) return;
+  try {
+    const data = await getAllUsage();
+    res.json({ count: data.length, ips: data });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to retrieve usage data" });
+  }
+});
+
+// GET /cache/usage/:ip — one IP's usage (requires warm secret)
+router.get("/usage/:ip", async (req: Request, res: Response) => {
+  if (!checkWarmSecret(req, res)) return;
+  try {
+    const data = await getIpUsage(req.params.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to retrieve usage data" });
   }
 });
 

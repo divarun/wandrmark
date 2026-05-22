@@ -22,6 +22,9 @@ const STALE_REFRESH_THRESHOLD = 600; // 10 minutes
 const LOCK_WAIT_MAX_MS      = 10_000;
 const LOCK_WAIT_INTERVAL_MS = 300;
 
+// Cache TTL for empty (no-results) upstream responses to avoid hammering APIs.
+const NEGATIVE_CACHE_TTL = 300; // 5 minutes
+
 function getCacheKey(prefix: string, ...parts: string[]): string {
   return `wandrmark:${prefix}:${parts.join(":")}`;
 }
@@ -41,10 +44,10 @@ interface FetchSpec {
 async function doFetch(
   cacheKey: string,
   spec: FetchSpec,
-  hasResults: (data: any) => boolean,
+  hasResults: (data: unknown) => boolean,
   ttl: number,
   timeoutMessage: string
-): Promise<{ data: any; httpStatus?: number; error?: string }> {
+): Promise<{ data: unknown; httpStatus?: number; error?: string }> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     if (attempt > 0) await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
 
@@ -68,8 +71,13 @@ async function doFetch(
         return { data: null, httpStatus: response.status, error: errorText.substring(0, 200) };
       }
 
-      const data = await response.json() as any;
-      if (hasResults(data)) await setCache(cacheKey, data, ttl);
+      const data = await response.json() as unknown;
+      if (hasResults(data)) {
+        await setCache(cacheKey, data, ttl);
+      } else {
+        // Cache empty results briefly to avoid repeated hammering of upstream APIs.
+        await setCache(cacheKey, data, NEGATIVE_CACHE_TTL);
+      }
       return { data };
     } catch (err) {
       clearTimeout(timeoutId);
@@ -107,7 +115,7 @@ async function pollForCache(key: string): Promise<any | null> {
 function refreshInBackground(
   cacheKey: string,
   spec: FetchSpec,
-  hasResults: (data: any) => boolean,
+  hasResults: (data: unknown) => boolean,
   ttl: number,
   timeoutMessage: string
 ): void {
@@ -132,10 +140,10 @@ function refreshInBackground(
 async function fetchWithCache(
   cacheKey: string,
   spec: FetchSpec,
-  hasResults: (data: any) => boolean,
+  hasResults: (data: unknown) => boolean,
   ttl: number,
   timeoutMessage: string
-): Promise<{ data: any; httpStatus?: number; error?: string }> {
+): Promise<{ data: unknown; httpStatus?: number; error?: string }> {
 
   // 1. Cache hit path
   const cached = await getCache(cacheKey);
@@ -226,12 +234,12 @@ router.post("/overpass", async (req: Request, res: Response) => {
         headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Wandrmark/1.0" },
         body: `data=${encodeURIComponent(query)}`,
       },
-      (d) => Array.isArray(d.elements) && d.elements.length > 0,
+      (d) => { const data = d as Record<string, unknown>; return Array.isArray(data?.elements) && (data.elements as unknown[]).length > 0; },
       CACHE_TTL.OVERPASS,
       "Overpass API timeout. Try a smaller search area or fewer categories."
     );
 
-    if (result.data) {
+    if (result.data !== null && result.data !== undefined) {
       setCacheHeaders(res, CACHE_TTL.OVERPASS);
       return res.json(result.data);
     }
@@ -254,12 +262,12 @@ router.get("/nominatim/search", async (req: Request, res: Response) => {
         url: `${NOMINATIM_URL}/search?${paramsString}`,
         headers: { "User-Agent": "Wandrmark/1.0", Accept: "application/json" },
       },
-      (d) => Array.isArray(d) && d.length > 0,
+      (d) => Array.isArray(d) && (d as unknown[]).length > 0,
       CACHE_TTL.NOMINATIM,
       "Nominatim search timeout"
     );
 
-    if (result.data) {
+    if (result.data !== null && result.data !== undefined) {
       setCacheHeaders(res, CACHE_TTL.NOMINATIM);
       return res.json(result.data);
     }
@@ -282,12 +290,15 @@ router.get("/nominatim/reverse", async (req: Request, res: Response) => {
         url: `${NOMINATIM_URL}/reverse?${paramsString}`,
         headers: { "User-Agent": "Wandrmark/1.0", Accept: "application/json" },
       },
-      (d) => d && (d.display_name || d.address),
+      (d) => {
+        const data = d as Record<string, unknown> | null;
+        return !!data && !!(data.display_name || data.address);
+      },
       CACHE_TTL.NOMINATIM,
       "Nominatim reverse timeout"
     );
 
-    if (result.data) {
+    if (result.data !== null && result.data !== undefined) {
       setCacheHeaders(res, CACHE_TTL.NOMINATIM);
       return res.json(result.data);
     }

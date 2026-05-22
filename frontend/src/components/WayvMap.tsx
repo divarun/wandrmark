@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { POI, LatLng, RouteSegment } from "@/types";
 
 let L: typeof import("leaflet");
 
 if (typeof window !== "undefined") {
   L = require("leaflet");
+  require("leaflet.markercluster");
 }
 
 interface WayvMapProps {
@@ -23,7 +26,7 @@ interface WayvMapProps {
   cityName?: string;
 }
 
-export default function WayvMap({
+function WayvMapInner({
   pois,
   selectedPoi,
   plannerPois,
@@ -37,7 +40,8 @@ export default function WayvMap({
 }: WayvMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const markersRef = useRef<L.Marker[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const clusterGroupRef = useRef<any>(null);
   const plannerMarkersRef = useRef<L.Marker[]>([]);
   const routeLinesRef = useRef<L.Polyline[]>([]);
   const moveEndHandlerRef = useRef<boolean>(false);
@@ -55,7 +59,6 @@ export default function WayvMap({
       zoomControl: false,
     });
 
-    // Two-layer tile setup: base (no labels) + labels overlay
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       subdomains: "abcd",
@@ -70,6 +73,17 @@ export default function WayvMap({
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
+    // Marker cluster group for POIs — disable clustering at high zoom
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const clusterGroup = (L as any).markerClusterGroup({
+      maxClusterRadius: 60,
+      disableClusteringAtZoom: 16,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+    });
+    clusterGroup.addTo(map);
+    clusterGroupRef.current = clusterGroup;
+
     map.on("moveend", () => {
       if (moveEndHandlerRef.current) {
         const c = map.getCenter();
@@ -79,13 +93,12 @@ export default function WayvMap({
 
     mapRef.current = map;
 
-    setTimeout(() => {
-      moveEndHandlerRef.current = true;
-    }, 500);
+    setTimeout(() => { moveEndHandlerRef.current = true; }, 500);
 
     return () => {
       map.remove();
       mapRef.current = null;
+      clusterGroupRef.current = null;
     };
   }, [onMapMoved]);
 
@@ -107,50 +120,46 @@ export default function WayvMap({
     }
   }, [center]);
 
-  // Render POI markers using CSS class-based circles
+  // Render POI markers into cluster group
   useEffect(() => {
-    if (!mapRef.current || !L) return;
+    if (!clusterGroupRef.current || !L) return;
 
-    const map = mapRef.current;
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = [];
+    clusterGroupRef.current.clearLayers();
 
     pois.forEach((poi) => {
       const isVisited = visitedPoiIds?.has(poi.id) ?? false;
 
       const icon = L.divIcon({
-        html: `<div class="poi-marker-dot ${poi.category}${isVisited ? " visited" : ""}"></div>`,
+        html: `<div class="poi-marker-dot ${poi.category}${isVisited ? " visited" : ""}" role="img" aria-label="${poi.name}"></div>`,
         className: "",
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       });
 
       const marker = L.marker([poi.coordinates.lat, poi.coordinates.lng], { icon })
-        .addTo(map)
         .on("click", () => onPoiClick(poi));
 
-      markersRef.current.push(marker);
+      clusterGroupRef.current.addLayer(marker);
     });
   }, [pois, onPoiClick, visitedPoiIds]);
 
-  // Render planner markers
+  // Render planner markers (never clustered — always visible)
   useEffect(() => {
     if (!mapRef.current || !L) return;
 
-    const map = mapRef.current;
     plannerMarkersRef.current.forEach((m) => m.remove());
     plannerMarkersRef.current = [];
 
     plannerPois.forEach((poi, index) => {
       const icon = L.divIcon({
-        html: `<div class="planner-marker-dot">${index + 1}</div>`,
+        html: `<div class="planner-marker-dot" aria-label="Stop ${index + 1}: ${poi.name}">${index + 1}</div>`,
         className: "",
         iconSize: [32, 32],
         iconAnchor: [16, 16],
       });
 
       const marker = L.marker([poi.coordinates.lat, poi.coordinates.lng], { icon })
-        .addTo(map)
+        .addTo(mapRef.current!)
         .on("click", () => onPoiClick(poi));
 
       plannerMarkersRef.current.push(marker);
@@ -161,7 +170,6 @@ export default function WayvMap({
   useEffect(() => {
     if (!mapRef.current || !L) return;
 
-    const map = mapRef.current;
     routeLinesRef.current.forEach((line) => line.remove());
     routeLinesRef.current = [];
 
@@ -171,7 +179,7 @@ export default function WayvMap({
         color: "#38bdf8",
         weight: 4,
         opacity: 0.85,
-      }).addTo(map);
+      }).addTo(mapRef.current!);
       routeLinesRef.current.push(polyline);
     });
 
@@ -181,7 +189,7 @@ export default function WayvMap({
         seg.geometry.forEach((c) => allCoords.push([c.lat, c.lng]));
       });
       if (allCoords.length > 0) {
-        map.fitBounds(L.latLngBounds(allCoords), { padding: [50, 50] });
+        mapRef.current.fitBounds(L.latLngBounds(allCoords), { padding: [50, 50] });
       }
     }
   }, [routeSegments, plannerPois]);
@@ -194,9 +202,8 @@ export default function WayvMap({
 
   return (
     <div className="relative w-full h-full">
-      <div ref={containerRef} className="w-full h-full relative z-0" />
+      <div ref={containerRef} className="w-full h-full relative z-0" aria-label="Interactive map" role="application" />
 
-      {/* City watermark */}
       {cityName && (
         <div
           style={{
@@ -204,6 +211,7 @@ export default function WayvMap({
             zIndex: 10, pointerEvents: "none",
             fontFamily: "'Space Grotesk', sans-serif",
           }}
+          aria-hidden="true"
         >
           <div style={{
             fontFamily: "'JetBrains Mono', monospace",
@@ -222,7 +230,7 @@ export default function WayvMap({
       )}
 
       {loading && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[5] pointer-events-none">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[5] pointer-events-none" role="status" aria-live="polite" aria-label="Loading places">
           <div
             className="rounded-full px-4 py-1.5 flex items-center gap-2"
             style={{
@@ -234,6 +242,7 @@ export default function WayvMap({
             <div
               className="w-3 h-3 rounded-full border-2 animate-spin"
               style={{ borderColor: "var(--cyan)", borderTopColor: "transparent" }}
+              aria-hidden="true"
             />
             <span className="text-xs font-semibold" style={{ color: "var(--ink-2)" }}>
               Loading places…
@@ -244,3 +253,6 @@ export default function WayvMap({
     </div>
   );
 }
+
+const WayvMap = memo(WayvMapInner);
+export default WayvMap;
