@@ -170,7 +170,7 @@ function ExplorerSidebarInner({
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [focusedIdx, setFocusedIdx] = useState(-1);
-  const [insightsCollapsed, setInsightsCollapsed] = useState(false);
+  const [insightsCollapsed, setInsightsCollapsed] = useState(true);
   const insightAbort = useRef<AbortController | null>(null);
   const { isFavorite, addFavorite, removeFavorite } = useFavorites();
 
@@ -537,7 +537,7 @@ function ExplorerSidebarInner({
 
         {/* Loading skeletons */}
         {loading && (
-          <div style={{ padding: "12px 10px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ padding: "12px 10px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "4px", overscrollBehavior: "contain" }}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "34px 1fr", gap: "10px", padding: "8px", alignItems: "center" }}>
                 <div className="skeleton" style={{ width: "34px", height: "34px", borderRadius: "9px" }} />
@@ -574,7 +574,7 @@ function ExplorerSidebarInner({
             </div>
 
             {/* Virtual scroll container */}
-            <div ref={poiContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 8px 18px" }}>
+            <div ref={poiContainerRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 8px 18px", overscrollBehavior: "contain" }}>
               {/* Top spacer */}
               <div style={{ height: topPadding }} aria-hidden="true" />
 

@@ -305,17 +305,19 @@
     right: 0;
     bottom: 0;
     top: auto;
-    height: 62vh;
-    max-height: 62vh;
+    height: 72vh;
+    max-height: 72vh;
     border-right: 0;
     border-top: 1px solid var(--line-2);
     border-radius: 18px 18px 0 0;
-    transform: translateY(calc(100% - 240px));
+    transform: translateY(calc(100% - 260px));
     transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
     z-index: 50;
     box-shadow: 0 -30px 60px rgba(0,0,0,0.55);
     backdrop-filter: blur(12px);
     background: linear-gradient(180deg, rgba(13,20,30,0.97), rgba(8,12,18,0.97));
+    /* clip instead of hidden so nested scroll containers work on iOS Safari */
+    overflow: clip;
   }
   .left-rail[data-open="true"] {
     transform: translateY(0);

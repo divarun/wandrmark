@@ -237,7 +237,7 @@ export default function PassportPanel() {
 
       {/* Help panel — replaces tabs when open so it can scroll freely on mobile */}
       {showHelp ? (
-        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0, overscrollBehavior: "contain" }}>
           {/* Sticky header */}
           <div style={{
             position: "sticky", top: 0, zIndex: 2,
@@ -429,7 +429,7 @@ export default function PassportPanel() {
           </div>
 
           {/* Tab content */}
-          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0, overscrollBehavior: "contain" }}>
 
         {/* Stats */}
         {activeTab === "stats" && (

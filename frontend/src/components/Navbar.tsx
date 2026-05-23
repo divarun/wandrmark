@@ -140,7 +140,7 @@ export default function Navbar({
               ? "linear-gradient(180deg, rgba(95,227,255,0.16), rgba(95,227,255,0.04))"
               : "rgba(10,15,23,0.6)",
             color: rightDrawerOpen ? "var(--cyan)" : "var(--ink-2)",
-            padding: "8px 12px", borderRadius: "9px",
+            padding: "8px 12px", borderRadius: "9px", minHeight: "44px",
             fontFamily: "var(--font)", fontWeight: 500, fontSize: "12.5px",
             gap: "7px",
             transition: "all 0.12s ease",
@@ -163,7 +163,7 @@ export default function Navbar({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 11h20"/><circle cx="7" cy="8" r="1" fill="currentColor"/><circle cx="11" cy="8" r="1" fill="currentColor"/>
           </svg>
-          <span className="hidden sm:inline">Passport</span>
+          <span>Passport</span>
         </button>
       </div>
     </header>

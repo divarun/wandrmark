@@ -161,7 +161,7 @@ function PlannerSidebarInner({
                 >
                   <span style={{ fontSize: "16px", lineHeight: 1 }}>{tm.emoji}</span>
                   <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.08em", textTransform: "uppercase", color: isActive ? "var(--orange)" : "var(--ink-4)" }}>
-                    {tm.label.slice(0, 5)}
+                    {tm.label}
                   </span>
                 </button>
               );
