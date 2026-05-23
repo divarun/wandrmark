@@ -11,6 +11,17 @@ export interface GeocodingResult {
   coordinates: LatLng;
   type: string;
   category: string;
+  distanceKm?: number;
+}
+
+function haversineKm(a: LatLng, b: LatLng): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(h));
 }
 
 /* ------------------------------------------------------------------ */
@@ -44,7 +55,8 @@ interface NominatimItem {
 export async function geocodeSearch(
   query: string,
   limit: number = 5,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  center?: LatLng
 ): Promise<GeocodingResult[]> {
   const now = Date.now();
   if (!query.trim() || now - last429Time < COOLDOWN_AFTER_429) return [];
@@ -57,6 +69,11 @@ export async function geocodeSearch(
       addressdetails: "1",
       extratags: "1",
     });
+
+    // Bias results toward the current map area (±0.5° box, ~55 km)
+    if (center) {
+      params.set("viewbox", `${center.lng - 0.5},${center.lat + 0.5},${center.lng + 0.5},${center.lat - 0.5}`);
+    }
 
     const response = await fetch(`${BASE_URL}/proxy/nominatim/search?${params}`, {
       headers: { "Content-Type": "application/json" },
@@ -72,7 +89,7 @@ export async function geocodeSearch(
 
     const data = await response.json() as NominatimItem[];
 
-    return data.map((item) => {
+    const results: GeocodingResult[] = data.map((item) => {
       const addr = item.address || {};
       const shortName =
         addr.city || addr.town || addr.village || addr.hamlet ||
@@ -80,16 +97,23 @@ export async function geocodeSearch(
       const state = addr.state || addr.county || "";
       const country = addr.country || "";
       const region = [state, country].filter(Boolean).join(", ");
+      const coordinates = { lat: parseFloat(item.lat), lng: parseFloat(item.lon) };
       return {
         id: item.place_id,
         displayName: item.display_name,
         shortName,
         region,
-        coordinates: { lat: parseFloat(item.lat), lng: parseFloat(item.lon) },
+        coordinates,
         type: item.type || "",
         category: item.category || "",
+        distanceKm: center ? haversineKm(center, coordinates) : undefined,
       };
     });
+
+    // Sort by distance from current location when center is provided
+    if (center) results.sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
+
+    return results;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") return [];
     return [];

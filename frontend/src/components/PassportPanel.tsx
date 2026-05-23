@@ -1,11 +1,12 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useGamification } from "@/contexts/GamificationContext";
-import { Achievement, Quest, Stamp } from "@/types/gamification";
+import { Achievement, Quest, Stamp, MysteryBox } from "@/types/gamification";
 import { formatDistance, formatDuration } from "@/services/routing";
 import { feedbackApi } from "@/services/api";
+import { useFavorites } from "@/hooks/useFavorites";
 
-type TabId = "stats" | "stamps" | "quests" | "badges";
+type TabId = "stats" | "stamps" | "quests" | "badges" | "favorites";
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   {
@@ -27,6 +28,11 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
     id: "badges",
     label: "Badges",
     icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>,
+  },
+  {
+    id: "favorites",
+    label: "Saved",
+    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
   },
 ];
 
@@ -54,6 +60,10 @@ const STAT_ROWS: { key: keyof ReturnType<typeof getStats>; label: string; unit?:
     icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 22s-7-7-7-12a7 7 0 0 1 14 0c0 5-7 12-7 12Z"/></svg>,
   },
   {
+    key: "favorites", label: "Saved places", color: "#ff8fb7", bg: "rgba(255,143,183,0.10)",
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
+  },
+  {
     key: "cities", label: "Cities explored", color: "#b196ff", bg: "rgba(177,150,255,0.10)",
     icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><rect x="2" y="14" width="6" height="8"/><rect x="9" y="10" width="6" height="12"/><rect x="16" y="5" width="6" height="17"/></svg>,
   },
@@ -67,13 +77,14 @@ const STAT_ROWS: { key: keyof ReturnType<typeof getStats>; label: string; unit?:
   },
 ];
 
-function getStats(statistics: { poisVisited: number; citiesVisited: number; questsCompleted: number; currentStreak: number }, stampsLen: number) {
+function getStats(statistics: { poisVisited: number; citiesVisited: number; questsCompleted: number; currentStreak: number }, stampsLen: number, favoritesLen: number) {
   return {
-    stamps: stampsLen,
-    pois:   statistics.poisVisited,
-    cities: statistics.citiesVisited,
-    quests: statistics.questsCompleted,
-    streak: statistics.currentStreak,
+    stamps:    stampsLen,
+    pois:      statistics.poisVisited,
+    favorites: favoritesLen,
+    cities:    statistics.citiesVisited,
+    quests:    statistics.questsCompleted,
+    streak:    statistics.currentStreak,
   };
 }
 
@@ -87,9 +98,11 @@ const LEVEL_PROGRESSION = [
 ];
 
 export default function PassportPanel() {
-  const { progress, tripHistory } = useGamification();
+  const { progress, tripHistory, openMysteryBox } = useGamification();
+  const { favorites, removeFavorite } = useFavorites();
   const [activeTab, setActiveTab] = useState<TabId>("stats");
   const [showHelp, setShowHelp] = useState(false);
+  const [openedBoxId, setOpenedBoxId] = useState<string | null>(null);
 
   // Star state
   const [starCount, setStarCount]   = useState(0);
@@ -150,7 +163,7 @@ export default function PassportPanel() {
   const { passport, activeQuests, achievements } = progress;
   const { level, statistics, stamps } = passport;
   const xpPct = Math.min((level.xp / level.xpToNextLevel) * 100, 100);
-  const stats = getStats(statistics, stamps.length);
+  const stats = getStats(statistics, stamps.length, favorites.length);
   const avatarBg = LEVEL_AVATAR_COLORS[level.title] ?? LEVEL_AVATAR_COLORS.Tourist;
   const initials = LEVEL_INITIALS[level.title] ?? "E";
 
@@ -384,7 +397,7 @@ export default function PassportPanel() {
           {/* Tabs */}
           <div
             role="tablist"
-            style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}
+            style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}
             aria-label="Passport sections"
           >
             {TABS.map((tab) => {
@@ -494,6 +507,19 @@ export default function PassportPanel() {
                   </div>
                 ))}
 
+                {/* Mystery boxes */}
+                {progress.mysteryBoxes.some(b => !b.opened) && (
+                  <div style={{ marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
+                    <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "10px" }}>
+                      Mystery Boxes — {progress.mysteryBoxes.filter(b => !b.opened).length} unopened
+                    </p>
+                    {progress.mysteryBoxes.filter(b => !b.opened).map((box) => (
+                      <MysteryBoxCard key={box.id} box={box} openedId={openedBoxId}
+                        onOpen={(id) => { openMysteryBox(id); setOpenedBoxId(id); }} />
+                    ))}
+                  </div>
+                )}
+
                 {/* Trip history quick view */}
                 {tripHistory.length > 0 && (
                   <div style={{ marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
@@ -595,6 +621,56 @@ export default function PassportPanel() {
                   Earned
                 </p>
                 {achievements.map((a) => <BadgeCard key={a.id} achievement={a} />)}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Favorites */}
+        {activeTab === "favorites" && (
+          <div
+            id="panel-favorites"
+            role="tabpanel"
+            aria-labelledby="tab-favorites"
+            style={{ padding: "14px" }}
+          >
+            {favorites.length === 0 ? (
+              <EmptyState emoji="♡" title="No saved places" subtitle="Tap the heart on any place to save it here" />
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)" }}>Saved</p>
+                  <p style={{ color: "#ff8fb7", fontFamily: "var(--mono)", fontSize: "10px", fontWeight: 600 }}>{favorites.length}</p>
+                </div>
+                {[...favorites].sort((a, b) => b.savedAt - a.savedAt).map((poi) => {
+                  const catColors: Record<string, { color: string; bg: string }> = {
+                    restaurant: { color: "#ff6b6f", bg: "rgba(255,107,111,0.10)" },
+                    cafe:       { color: "#ffa14a", bg: "rgba(255,161,74,0.10)"  },
+                    attraction: { color: "#b196ff", bg: "rgba(177,150,255,0.10)" },
+                    park:       { color: "#5cdb95", bg: "rgba(92,219,149,0.10)"  },
+                    museum:     { color: "#ff8fb7", bg: "rgba(255,143,183,0.10)" },
+                  };
+                  const cfg = catColors[poi.category] ?? { color: "var(--cyan)", bg: "rgba(95,227,255,0.10)" };
+                  const catEmoji: Record<string, string> = { restaurant: "🍽️", cafe: "☕", attraction: "🎭", park: "🌳", museum: "🏛️" };
+                  return (
+                    <div key={poi.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr auto", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "10px", border: "1px solid var(--line-2)", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "6px" }}>
+                      <div style={{ width: "32px", height: "32px", borderRadius: "8px", display: "grid", placeItems: "center", background: cfg.bg, border: `1px solid ${cfg.color}44`, fontSize: "14px", flexShrink: 0 }}>
+                        {catEmoji[poi.category] ?? "📍"}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ color: "var(--ink)", fontWeight: 500, fontSize: "12.5px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{poi.name}</p>
+                        <p style={{ color: "var(--ink-4)", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "1px" }}>{poi.address}</p>
+                      </div>
+                      <button
+                        onClick={() => removeFavorite(poi.id)}
+                        aria-label={`Remove ${poi.name} from saved places`}
+                        style={{ width: "28px", height: "28px", borderRadius: "7px", display: "grid", placeItems: "center", background: "rgba(255,107,111,0.08)", border: "1px solid rgba(255,107,111,0.22)", color: "var(--coral)", cursor: "pointer", fontSize: "12px", flexShrink: 0 }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
               </>
             )}
           </div>
@@ -814,6 +890,48 @@ function QuestCard({ quest }: { quest: Quest }) {
           {quest.expiresAt ? `Expires ${new Date(quest.expiresAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}` : "No expiry"}
         </span>
         <span style={{ color: "var(--cyan)", fontWeight: 600 }}>+{quest.reward.xp} XP</span>
+      </div>
+    </div>
+  );
+}
+
+function MysteryBoxCard({ box, openedId, onOpen }: { box: MysteryBox; openedId: string | null; onOpen: (id: string) => void }) {
+  const rarityConfig = {
+    common:    { color: "var(--ink-3)", border: "var(--line-2)", bg: "rgba(255,255,255,0.02)", emoji: "📦", label: "Common" },
+    rare:      { color: "#b196ff", border: "rgba(177,150,255,0.30)", bg: "rgba(177,150,255,0.06)", emoji: "✨", label: "Rare" },
+    epic:      { color: "#ffa14a", border: "rgba(255,161,74,0.30)", bg: "rgba(255,161,74,0.06)", emoji: "🔮", label: "Epic" },
+    legendary: { color: "#ffd05a", border: "rgba(255,208,90,0.35)", bg: "rgba(255,208,90,0.07)", emoji: "👑", label: "Legendary" },
+  };
+  const cfg = rarityConfig[box.rarity] ?? rarityConfig.common;
+  const isRevealed = openedId === box.id;
+
+  return (
+    <div style={{ border: `1px solid ${cfg.border}`, borderRadius: "12px", background: cfg.bg, padding: "12px", marginBottom: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <span style={{ fontSize: "20px", flexShrink: 0 }}>{cfg.emoji}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", color: cfg.color, fontWeight: 600, marginBottom: "2px" }}>{cfg.label} box</p>
+          {isRevealed ? (
+            <p style={{ fontSize: "12px", color: "var(--ink-2)", lineHeight: 1.5 }}>{box.reward.content}</p>
+          ) : (
+            <p style={{ fontSize: "11.5px", color: "var(--ink-4)" }}>Tap to reveal a local insight</p>
+          )}
+        </div>
+        {!isRevealed && (
+          <button
+            onClick={() => onOpen(box.id)}
+            style={{
+              padding: "6px 12px", borderRadius: "8px", cursor: "pointer",
+              background: `linear-gradient(180deg, ${cfg.bg.replace("0.06", "0.14")}, ${cfg.bg})`,
+              border: `1px solid ${cfg.border}`,
+              color: cfg.color, fontFamily: "var(--mono)", fontWeight: 600, fontSize: "10px",
+              letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0,
+              transition: "all 0.12s ease",
+            }}
+          >
+            Open
+          </button>
+        )}
       </div>
     </div>
   );

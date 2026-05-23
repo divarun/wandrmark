@@ -80,6 +80,17 @@ function WayvMapInner({
       disableClusteringAtZoom: 16,
       spiderfyOnMaxZoom: true,
       showCoverageOnHover: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      iconCreateFunction: (cluster: any) => {
+        const count = cluster.getChildCount();
+        const sizeClass = count < 10 ? "small" : count < 100 ? "medium" : "large";
+        return L.divIcon({
+          html: `<div class="marker-cluster marker-cluster-${sizeClass}" role="img" aria-label="${count} places nearby"><div><span>${count}</span></div></div>`,
+          className: "",
+          iconSize: [40, 40] as [number, number],
+          iconAnchor: [20, 20] as [number, number],
+        });
+      },
     });
     clusterGroup.addTo(map);
     clusterGroupRef.current = clusterGroup;

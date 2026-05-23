@@ -3,7 +3,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { POI, TransportMode, RouteSegment, Itinerary, LatLng } from "@/types";
 import { ExplorerTitle } from "@/types/gamification";
 import { usePOIs } from "@/hooks/usePOIs";
-import { computeRoute } from "@/services/routing";
+import { computeRoute, formatDistance, formatDuration } from "@/services/routing";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { useGamification } from "@/contexts/GamificationContext";
 
 import Navbar from "@/components/Navbar";
@@ -124,7 +125,8 @@ export default function Home() {
     setMode(newMode);
   }, []);
 
-  const { pois, loading, error, activeCategories, toggleCategory, selectAllCategories, load } = usePOIs();
+  const isOnline = useNetworkStatus();
+  const { pois, loading, error, isCached, activeCategories, toggleCategory, selectAllCategories, load } = usePOIs();
   const { visitPOI, progress, visitedPoiIds, saveTripMemory } = useGamification();
   const mapMoveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -236,6 +238,7 @@ export default function Home() {
       setRouteSegments(result.segments);
       setTotalDistance(result.totalDistance);
       setTotalDuration(result.totalDuration);
+      showInfoToast(`Route ready — ${formatDistance(result.totalDistance)} · ${formatDuration(result.totalDuration)}`, "🗺️");
     } catch (err) {
       setRouteError(err instanceof Error ? err.message : "Routing failed.");
     } finally {
@@ -291,6 +294,7 @@ export default function Home() {
       activeCategories={activeCategories}
       onToggleCategory={toggleCategory}
       onSelectAllCategories={selectAllCategories}
+      mapCenter={mapCenter}
     />
   ) : (
     <PlannerSidebar
@@ -307,6 +311,7 @@ export default function Home() {
       routeError={routeError}
       onClear={() => setPlannerPois([])}
       onSaveItinerary={handleSaveItinerary}
+      onGoToExplorer={() => handleModeChange("explorer")}
     />
   );
 
@@ -315,6 +320,26 @@ export default function Home() {
       <a className="skip-link" href="#map">Skip to map</a>
 
       <AchievementToast />
+
+      {!isOnline && (
+        <div
+          role="alert"
+          style={{
+            position: "fixed", top: 56, left: 0, right: 0, zIndex: 200,
+            background: "rgba(10,15,23,0.95)", backdropFilter: "blur(8px)",
+            borderBottom: "1px solid rgba(255,161,74,0.35)",
+            padding: "8px 16px",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+          </svg>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--orange)", letterSpacing: "0.04em" }}>
+            {isCached ? "Offline — showing cached places" : "You're offline"}
+          </span>
+        </div>
+      )}
 
       {showOnboarding && (
         <OnboardingModal onClose={() => setShowOnboarding(false)} />

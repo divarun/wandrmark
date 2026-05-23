@@ -6,6 +6,7 @@ import { formatDistance, formatDuration } from "@/services/routing";
 import { exportItineraryJSON, exportItineraryPDF } from "@/utils/export";
 import { localItineraries } from "@/services/localStorage";
 import { aiApi } from "@/services/api";
+import { showInfoToast } from "@/components/AchievementToast";
 
 interface PlannerSidebarProps {
   plannerPois: POI[];
@@ -21,6 +22,7 @@ interface PlannerSidebarProps {
   routeError: string | null;
   onClear: () => void;
   onSaveItinerary?: (itinerary: Itinerary) => void;
+  onGoToExplorer?: () => void;
 }
 
 function extractCityName(pois: POI[]): string {
@@ -47,6 +49,7 @@ function PlannerSidebarInner({
   routeError,
   onClear,
   onSaveItinerary,
+  onGoToExplorer,
 }: PlannerSidebarProps) {
   const [itineraryName, setItineraryName] = useState("My Trip");
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -88,6 +91,7 @@ function PlannerSidebarInner({
     onSaveItinerary?.(itinerary);
     setJustSaved(true);
     setTimeout(() => setJustSaved(false), 2000);
+    showInfoToast(`"${itinerary.name}" saved to your trips`, "💾");
 
     // Generate AI trip story in background — non-blocking
     if (plannerPois.length >= 2) {
@@ -214,6 +218,25 @@ function PlannerSidebarInner({
             <p style={{ fontSize: "11.5px", color: "var(--ink-4)", lineHeight: 1.5 }}>
               Tap <kbd style={{ display: "inline-grid", placeItems: "center", background: "rgba(95,227,255,0.12)", border: "1px solid rgba(95,227,255,0.3)", color: "var(--cyan)", fontFamily: "var(--mono)", fontSize: "10px", padding: "2px 5px", borderRadius: "4px", margin: "0 1px" }}>+</kbd> on any place to add it
             </p>
+            {onGoToExplorer && (
+              <button
+                onClick={onGoToExplorer}
+                style={{
+                  marginTop: "10px",
+                  display: "inline-flex", alignItems: "center", gap: "6px",
+                  padding: "8px 16px", borderRadius: "99px",
+                  background: "linear-gradient(180deg, rgba(95,227,255,0.14), rgba(95,227,255,0.04))",
+                  border: "1px solid rgba(95,227,255,0.35)",
+                  color: "var(--cyan)", fontFamily: "var(--mono)", fontWeight: 600, fontSize: "11px",
+                  letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer",
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Explore Places
+              </button>
+            )}
           </div>
         )}
 
