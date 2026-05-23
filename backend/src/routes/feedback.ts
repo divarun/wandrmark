@@ -1,30 +1,13 @@
 import { Router, Request, Response } from "express";
-import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { submitBug, getBugReports, toggleStar, getStarStatus, getFeedbackStats } from "../services/feedback";
+import { checkAdminAuth } from "../middleware/adminAuth";
 
 const router = Router();
 
 function getClientIP(req: Request): string {
   return ((req.ip ?? req.socket.remoteAddress) || "").replace(/^::ffff:/, "");
-}
-
-function checkSecret(req: Request, res: Response): boolean {
-  const secret = process.env.CACHE_WARM_SECRET;
-  if (!secret) return true;
-  const provided = req.headers["x-cache-secret"];
-  if (typeof provided !== "string") {
-    res.status(401).json({ error: "Invalid or missing x-cache-secret header" });
-    return false;
-  }
-  const secretBuf  = Buffer.from(secret,   "utf8");
-  const providedBuf = Buffer.from(provided, "utf8");
-  if (secretBuf.length !== providedBuf.length || !crypto.timingSafeEqual(secretBuf, providedBuf)) {
-    res.status(401).json({ error: "Invalid or missing x-cache-secret header" });
-    return false;
-  }
-  return true;
 }
 
 const bugLimiter = rateLimit({
@@ -55,7 +38,7 @@ router.post("/bug", bugLimiter, async (req: Request, res: Response) => {
 
 // GET /feedback/bugs — admin only (requires warm secret)
 router.get("/bugs", async (req: Request, res: Response) => {
-  if (!checkSecret(req, res)) return;
+  if (!checkAdminAuth(req, res)) return;
   try {
     const reports = await getBugReports();
     res.json({ count: reports.length, reports });

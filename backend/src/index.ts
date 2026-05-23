@@ -1,11 +1,11 @@
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import crypto from "crypto";
 import dotenv from "dotenv";
 import http from "http";
 import { checkRedisHealth } from "./services/cache";
 import { trackRequest } from "./services/usage";
+import { isWhitelistedIP, checkAdminAuth } from "./middleware/adminAuth";
 import aiRoutes from "./routes/ai";
 import proxyRoutes from "./routes/proxy";
 import cacheRoutes from "./routes/cache";
@@ -28,23 +28,11 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
   : ["http://localhost:3000", "http://localhost:3001"];
 
-// IPs allowed to call the API without a browser Origin header (e.g. your local machine).
-// In development localhost is always allowed; in production only explicitly listed IPs pass.
-const ALLOWED_IPS: string[] = process.env.ALLOWED_IPS
-  ? process.env.ALLOWED_IPS.split(",").map((ip) => ip.trim())
-  : [];
-
 // Trust the first proxy hop so req.ip reflects the real client IP behind nginx / a load balancer.
 app.set("trust proxy", 1);
 
 function getClientIP(req: express.Request): string {
   return (req.ip ?? req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
-}
-
-function isWhitelistedIP(req: express.Request): boolean {
-  const ip = getClientIP(req);
-  if (!IS_PROD && (ip === "127.0.0.1" || ip === "::1")) return true;
-  return ALLOWED_IPS.includes(ip);
 }
 
 app.use(
@@ -133,17 +121,7 @@ app.use("/api/cache", cacheRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/docs", (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const secret = process.env.CACHE_WARM_SECRET;
-  if (!secret || isWhitelistedIP(req)) return next();
-  const provided = req.headers["x-cache-secret"];
-  if (typeof provided !== "string") {
-    return res.status(401).json({ error: "API docs require x-cache-secret header." });
-  }
-  const a = Buffer.from(secret, "utf8");
-  const b = Buffer.from(provided, "utf8");
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return res.status(401).json({ error: "API docs require x-cache-secret header." });
-  }
+  if (!checkAdminAuth(req, res)) return;
   next();
 }, swaggerRouter);
 

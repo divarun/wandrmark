@@ -20,6 +20,7 @@ import AchievementToast, {
   showInfoToast,
 } from "@/components/AchievementToast";
 import { LevelUpModal } from "@/components/LevelUpModal";
+import { OnboardingModal, isOnboardingDone } from "@/components/OnboardingModal";
 
 const MAP_CENTER_KEY = "wandrmark:lastMapCenter";
 
@@ -81,6 +82,9 @@ export default function Home() {
     return urlCenter ?? loadSavedCenter() ?? { lat: 40.7128, lng: -74.006 };
   });
   const [levelUpData, setLevelUpData] = useState<{ level: number; title: ExplorerTitle } | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [hasPassportBadge, setHasPassportBadge] = useState(false);
+  const [passportNudgeXP, setPassportNudgeXP] = useState<number | null>(null);
 
   // Left rail: mobile bottom sheet state
   const [leftSheetOpen, setLeftSheetOpen] = useState(false);
@@ -96,6 +100,28 @@ export default function Home() {
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  useEffect(() => {
+    if (!isOnboardingDone()) setShowOnboarding(true);
+  }, []);
+
+  useEffect(() => {
+    if (passportNudgeXP === null) return;
+    const t = setTimeout(() => setPassportNudgeXP(null), 6000);
+    return () => clearTimeout(t);
+  }, [passportNudgeXP]);
+
+  const handleModeChange = useCallback((newMode: "explorer" | "planner") => {
+    if (newMode === "planner") {
+      try {
+        if (!localStorage.getItem("wandrmark:seen_planner_hint")) {
+          showInfoToast("Add places from the map to build a route", "🗓️");
+          localStorage.setItem("wandrmark:seen_planner_hint", "true");
+        }
+      } catch {}
+    }
+    setMode(newMode);
   }, []);
 
   const { pois, loading, error, activeCategories, toggleCategory, selectAllCategories, load } = usePOIs();
@@ -146,7 +172,17 @@ export default function Home() {
       showLevelUpToast(lvl, result.newLevel as ExplorerTitle);
       setLevelUpData({ level: lvl, title: result.newLevel as ExplorerTitle });
     }
-  }, [visitPOI, progress]);
+
+    if (isMobile) {
+      setHasPassportBadge(true);
+      try {
+        if (!localStorage.getItem("wandrmark:seen_passport_nudge")) {
+          setPassportNudgeXP(result.xpGained);
+          localStorage.setItem("wandrmark:seen_passport_nudge", "true");
+        }
+      } catch {}
+    }
+  }, [visitPOI, progress, isMobile]);
 
   const handleMapMoved = useCallback((center: LatLng) => {
     setMapCenter(center);
@@ -230,7 +266,13 @@ export default function Home() {
   }, [mode]);
 
   const handleToggleRightDrawer = useCallback(() => {
-    setRightDrawerOpen((prev) => !prev);
+    setRightDrawerOpen((prev) => {
+      if (!prev) {
+        setHasPassportBadge(false);
+        setPassportNudgeXP(null);
+      }
+      return !prev;
+    });
   }, []);
 
   const handleToggleAI = useCallback(() => {
@@ -274,6 +316,40 @@ export default function Home() {
 
       <AchievementToast />
 
+      {showOnboarding && (
+        <OnboardingModal onClose={() => setShowOnboarding(false)} />
+      )}
+
+      {passportNudgeXP !== null && isMobile && (
+        <button
+          onClick={() => {
+            setRightDrawerOpen(true);
+            setHasPassportBadge(false);
+            setPassportNudgeXP(null);
+          }}
+          className="animate-slide-in-right"
+          aria-label="Open passport to see your XP"
+          style={{
+            position: "fixed", top: "64px", right: "12px", zIndex: 49,
+            display: "inline-flex", alignItems: "center", gap: "8px",
+            padding: "10px 14px", borderRadius: "12px",
+            background: "rgba(10,15,23,0.90)", backdropFilter: "blur(10px)",
+            border: "1px solid rgba(95,227,255,0.35)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.35), 0 0 16px rgba(95,227,255,0.08)",
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ fontSize: "15px", lineHeight: 1 }}>🎖️</span>
+          <span style={{ fontFamily: "var(--font)", fontSize: "12.5px", color: "var(--ink-2)", whiteSpace: "nowrap" }}>
+            <span style={{ color: "var(--cyan)", fontWeight: 700, fontFamily: "var(--mono)" }}>+{passportNudgeXP} XP</span>
+            {" "}· Tap to see your Passport
+          </span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      )}
+
       {levelUpData && (
         <LevelUpModal
           newLevel={levelUpData.title}
@@ -293,9 +369,10 @@ export default function Home() {
       {/* Topbar */}
       <Navbar
         mode={mode}
-        onModeChange={setMode}
+        onModeChange={handleModeChange}
         rightDrawerOpen={rightDrawerOpen}
         onToggleRightDrawer={handleToggleRightDrawer}
+        hasPassportBadge={hasPassportBadge}
       />
 
       {/* Main stage */}
@@ -391,7 +468,7 @@ export default function Home() {
               Passport
             </button>
             <button
-              onClick={() => { setAiPanelOpen(true); if (mode === "explorer") setMode("planner"); }}
+              onClick={() => { setAiPanelOpen(true); if (mode === "explorer") handleModeChange("planner"); }}
               style={{
                 flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px",
                 padding: "7px 10px", borderRadius: "8px", cursor: "pointer",

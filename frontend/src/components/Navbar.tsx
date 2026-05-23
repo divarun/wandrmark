@@ -5,6 +5,7 @@ interface NavbarProps {
   onModeChange: (mode: "explorer" | "planner") => void;
   rightDrawerOpen: boolean;
   onToggleRightDrawer: () => void;
+  hasPassportBadge?: boolean;
 }
 
 export default function Navbar({
@@ -12,6 +13,7 @@ export default function Navbar({
   onModeChange,
   rightDrawerOpen,
   onToggleRightDrawer,
+  hasPassportBadge = false,
 }: NavbarProps) {
   const explorerActive = mode === "explorer";
 
@@ -63,6 +65,7 @@ export default function Navbar({
           role="tab"
           aria-selected={explorerActive}
           data-mode="explorer"
+          title="Discover and visit nearby places"
           onClick={() => onModeChange("explorer")}
           style={{
             appearance: "none", border: 0, cursor: "pointer",
@@ -92,6 +95,7 @@ export default function Navbar({
           role="tab"
           aria-selected={!explorerActive}
           data-mode="planner"
+          title="Build multi-stop routes and save itineraries"
           onClick={() => onModeChange("planner")}
           style={{
             appearance: "none", border: 0, cursor: "pointer",
@@ -123,25 +127,39 @@ export default function Navbar({
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", alignItems: "center" }}>
         <button
           onClick={onToggleRightDrawer}
-          aria-label="Open passport"
+          aria-label={hasPassportBadge ? "Open passport — new updates" : "Open passport"}
           aria-controls="rightRail"
           aria-expanded={rightDrawerOpen}
           title="Passport"
-          className="block xl:hidden"
+          className="xl:hidden inline-flex items-center"
           style={{
             appearance: "none", cursor: "pointer",
             border: "1px solid",
-            borderColor: rightDrawerOpen ? "rgba(95,227,255,0.35)" : "var(--line-2)",
+            borderColor: rightDrawerOpen ? "rgba(95,227,255,0.35)" : hasPassportBadge ? "rgba(95,227,255,0.3)" : "var(--line-2)",
             background: rightDrawerOpen
               ? "linear-gradient(180deg, rgba(95,227,255,0.16), rgba(95,227,255,0.04))"
               : "rgba(10,15,23,0.6)",
             color: rightDrawerOpen ? "var(--cyan)" : "var(--ink-2)",
             padding: "8px 12px", borderRadius: "9px",
             fontFamily: "var(--font)", fontWeight: 500, fontSize: "12.5px",
-            display: "inline-flex", alignItems: "center", gap: "7px",
+            gap: "7px",
             transition: "all 0.12s ease",
+            position: "relative",
           }}
         >
+          {hasPassportBadge && (
+            <span
+              aria-hidden="true"
+              style={{
+                position: "absolute", top: "6px", right: "6px",
+                width: "8px", height: "8px", borderRadius: "50%",
+                background: "var(--cyan)",
+                boxShadow: "0 0 6px rgba(95,227,255,0.7)",
+                border: "1.5px solid rgba(10,15,23,0.9)",
+                animation: "pulse 1.8s infinite",
+              }}
+            />
+          )}
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 11h20"/><circle cx="7" cy="8" r="1" fill="currentColor"/><circle cx="11" cy="8" r="1" fill="currentColor"/>
           </svg>

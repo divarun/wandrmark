@@ -426,55 +426,96 @@ export default function PassportPanel() {
             aria-labelledby="tab-stats"
             style={{ padding: "14px", display: "flex", flexDirection: "column", gap: "8px" }}
           >
-            {/* Section header */}
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>Lifetime</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>
-                Since {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-              </span>
-            </div>
-
-            {STAT_ROWS.map(({ key, label, unit, color, bg, icon }) => (
-              <div
-                key={key}
-                style={{
-                  display: "grid", gridTemplateColumns: "28px 1fr auto",
-                  alignItems: "center", gap: "12px",
-                  padding: "11px 12px",
-                  border: "1px solid var(--line-2)", borderRadius: "10px",
-                  background: "linear-gradient(180deg, rgba(255,255,255,0.012), rgba(255,255,255,0))",
-                }}
-              >
-                <div style={{ width: "28px", height: "28px", borderRadius: "8px", display: "grid", placeItems: "center", background: bg, border: `1px solid ${color}44`, color }}>
-                  {icon}
+            {stats.pois === 0 ? (
+              /* ── First-run aspirational state ── */
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", paddingTop: "8px", gap: "6px" }}>
+                <div style={{
+                  width: "52px", height: "52px", borderRadius: "16px", fontSize: "24px",
+                  background: "linear-gradient(135deg, rgba(95,227,255,0.12), rgba(177,150,255,0.08))",
+                  border: "1px solid rgba(95,227,255,0.22)",
+                  display: "grid", placeItems: "center", marginBottom: "4px",
+                }}>
+                  🗺️
                 </div>
-                <span style={{ color: "var(--ink-2)", fontSize: "12.5px", fontWeight: 500 }}>{label}</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.01em" }}>
-                  {stats[key]}<span style={{ color: "var(--ink-4)", fontWeight: 500, fontSize: "11px", marginLeft: "2px" }}>{unit}</span>
-                </span>
-              </div>
-            ))}
-
-            {/* Trip history quick view */}
-            {tripHistory.length > 0 && (
-              <div style={{ marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
-                <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "10px" }}>
-                  Trip History — {tripHistory.length} recorded
+                <p style={{ color: "var(--ink-2)", fontWeight: 600, fontSize: "14px" }}>Your passport is empty</p>
+                <p style={{ color: "var(--ink-4)", fontSize: "12.5px", lineHeight: 1.55, maxWidth: "220px", marginBottom: "16px" }}>
+                  Tap any place on the map to visit it and earn your first XP.
                 </p>
-                {tripHistory.slice(-3).reverse().map((trip) => (
-                  <div key={trip.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--line-2)", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "6px" }}>
-                    <div>
-                      <p style={{ color: "var(--ink)", fontWeight: 500, fontSize: "12.5px" }}>{trip.cityName}</p>
-                      <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", marginTop: "2px" }}>
-                        {formatDistance(trip.distance)} · {formatDuration(trip.duration)} · {trip.poisVisited.length} stops
-                      </p>
+
+                <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", textAlign: "left", marginBottom: "2px" }}>
+                    First steps
+                  </p>
+                  {[
+                    { icon: "📍", label: "Visit your first place", reward: "+10 XP", color: "var(--cyan)" },
+                    { icon: "🎫", label: "Earn a neighborhood stamp", reward: "+30 XP", color: "#ffa14a" },
+                    { icon: "🎯", label: "Complete a daily quest", reward: "+50 XP", color: "#5cdb95" },
+                  ].map(({ icon, label, reward, color }) => (
+                    <div key={label} style={{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "9px 12px", borderRadius: "9px", textAlign: "left",
+                      background: "rgba(255,255,255,0.02)", border: "1px solid var(--line)",
+                    }}>
+                      <span style={{ fontSize: "14px", flexShrink: 0 }}>{icon}</span>
+                      <span style={{ flex: 1, fontSize: "12px", color: "var(--ink-3)" }}>{label}</span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", fontWeight: 600, color, flexShrink: 0 }}>{reward}</span>
                     </div>
-                    <p style={{ color: "var(--ink-5)", fontFamily: "var(--mono)", fontSize: "9.5px", flexShrink: 0 }}>
-                      {new Date(trip.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Section header */}
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>Lifetime</span>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>
+                    Since {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                  </span>
+                </div>
+
+                {STAT_ROWS.map(({ key, label, unit, color, bg, icon }) => (
+                  <div
+                    key={key}
+                    style={{
+                      display: "grid", gridTemplateColumns: "28px 1fr auto",
+                      alignItems: "center", gap: "12px",
+                      padding: "11px 12px",
+                      border: "1px solid var(--line-2)", borderRadius: "10px",
+                      background: "linear-gradient(180deg, rgba(255,255,255,0.012), rgba(255,255,255,0))",
+                    }}
+                  >
+                    <div style={{ width: "28px", height: "28px", borderRadius: "8px", display: "grid", placeItems: "center", background: bg, border: `1px solid ${color}44`, color }}>
+                      {icon}
+                    </div>
+                    <span style={{ color: "var(--ink-2)", fontSize: "12.5px", fontWeight: 500 }}>{label}</span>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.01em" }}>
+                      {stats[key]}<span style={{ color: "var(--ink-4)", fontWeight: 500, fontSize: "11px", marginLeft: "2px" }}>{unit}</span>
+                    </span>
                   </div>
                 ))}
-              </div>
+
+                {/* Trip history quick view */}
+                {tripHistory.length > 0 && (
+                  <div style={{ marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
+                    <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "10px" }}>
+                      Trip History — {tripHistory.length} recorded
+                    </p>
+                    {tripHistory.slice(-3).reverse().map((trip) => (
+                      <div key={trip.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--line-2)", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "6px" }}>
+                        <div>
+                          <p style={{ color: "var(--ink)", fontWeight: 500, fontSize: "12.5px" }}>{trip.cityName}</p>
+                          <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", marginTop: "2px" }}>
+                            {formatDistance(trip.distance)} · {formatDuration(trip.duration)} · {trip.poisVisited.length} stops
+                          </p>
+                        </div>
+                        <p style={{ color: "var(--ink-5)", fontFamily: "var(--mono)", fontSize: "9.5px", flexShrink: 0 }}>
+                          {new Date(trip.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
