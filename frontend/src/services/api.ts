@@ -30,11 +30,13 @@ export const aiApi = {
   async getRecommendations(
     selectedPois: { name: string; category: string; address: string }[],
     userPreferences?: string,
-    mood?: string
+    mood?: string,
+    signal?: AbortSignal
   ): Promise<{ recommendations: { name: string; category: string; reason: string }[] }> {
     return request("/ai/recommendations", {
       method: "POST",
       body: JSON.stringify({ selectedPois, userPreferences, mood }),
+      signal,
     });
   },
 
@@ -49,10 +51,11 @@ export const aiApi = {
     });
   },
 
-  async getCityInsights(cityName: string): Promise<CityInsights> {
+  async getCityInsights(cityName: string, signal?: AbortSignal): Promise<CityInsights> {
     return request("/ai/city-insights", {
       method: "POST",
       body: JSON.stringify({ cityName }),
+      signal,
     });
   },
 

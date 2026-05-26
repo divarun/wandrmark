@@ -130,6 +130,12 @@ export default function Home() {
   const { visitPOI, progress, visitedPoiIds, saveTripMemory } = useGamification();
   const mapMoveDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Keep a ref so handlePoiClick can read the current level without depending on
+  // progress as a useCallback dep (progress changes on every POI visit, which would
+  // invalidate handlePoiClick and force WayvMap + ExplorerSidebar to re-render).
+  const progressRef = useRef(progress);
+  useEffect(() => { progressRef.current = progress; });
+
   useEffect(() => {
     const urlCenter = readURLCenter();
     const saved = loadSavedCenter();
@@ -169,22 +175,23 @@ export default function Home() {
     showXPToast(result.xpGained);
     result.achievements.forEach((a) => showAchievementToast(a));
 
-    if (result.leveledUp && result.newLevel) {
-      const lvl = progress?.passport.level.level ?? 1;
-      showLevelUpToast(lvl, result.newLevel as ExplorerTitle);
-      setLevelUpData({ level: lvl, title: result.newLevel as ExplorerTitle });
+    if (result.leveledUp && result.newLevel && result.newLevelNum) {
+      showLevelUpToast(result.newLevelNum, result.newLevel as ExplorerTitle);
+      setLevelUpData({ level: result.newLevelNum, title: result.newLevel as ExplorerTitle });
     }
 
     if (isMobile) {
-      setHasPassportBadge(true);
       try {
         if (!localStorage.getItem("wandrmark:seen_passport_nudge")) {
+          setHasPassportBadge(true);
           setPassportNudgeXP(result.xpGained);
           localStorage.setItem("wandrmark:seen_passport_nudge", "true");
         }
       } catch {}
     }
-  }, [visitPOI, progress, isMobile]);
+  }, [visitPOI, isMobile]);
+
+  const handleRetry = useCallback(() => load(mapCenter), [load, mapCenter]);
 
   const handleMapMoved = useCallback((center: LatLng) => {
     setMapCenter(center);
@@ -204,12 +211,14 @@ export default function Home() {
   }, [load]);
 
   const addToPlanner = useCallback((poi: POI | Partial<POI>) => {
-    if (poi.id && plannerPois.some((p) => p.id === poi.id)) {
-      showInfoToast(`${poi.name || "Place"} is already in your plan`, "📍");
-      return;
-    }
-    setPlannerPois((prev) => [...prev, poi as POI]);
-  }, [plannerPois]);
+    setPlannerPois((prev) => {
+      if (poi.id && prev.some((p) => p.id === poi.id)) {
+        showInfoToast(`${poi.name || "Place"} is already in your plan`, "📍");
+        return prev;
+      }
+      return [...prev, poi as POI];
+    });
+  }, []);
 
   const removeFromPlanner = useCallback((id: string) => {
     setPlannerPois((prev) => prev.filter((p) => p.id !== id));
@@ -247,7 +256,7 @@ export default function Home() {
   }, [plannerPois, transportMode]);
 
   const handleSaveItinerary = useCallback((itinerary: Itinerary) => {
-    saveTripMemory({
+    const newAchievements = saveTripMemory({
       cityName: deriveCityName(itinerary.route.pois),
       poisVisited: itinerary.route.pois,
       route: itinerary.route.segments,
@@ -255,6 +264,7 @@ export default function Home() {
       duration: itinerary.route.totalDuration,
       notes: itinerary.name,
     });
+    newAchievements.forEach((a) => showAchievementToast(a));
   }, [saveTripMemory]);
 
   useEffect(() => {
@@ -290,7 +300,7 @@ export default function Home() {
       onPoiClick={handlePoiClick}
       onSearchResult={handleSearchResult}
       onAddToPlanner={addToPlanner}
-      onRetry={() => load(mapCenter)}
+      onRetry={handleRetry}
       activeCategories={activeCategories}
       onToggleCategory={toggleCategory}
       onSelectAllCategories={selectAllCategories}
@@ -357,7 +367,7 @@ export default function Home() {
           style={{
             position: "fixed", top: "64px", right: "12px", zIndex: 49,
             display: "inline-flex", alignItems: "center", gap: "8px",
-            padding: "10px 14px", borderRadius: "12px",
+            padding: "10px 14px", borderRadius: "12px", minHeight: "44px",
             background: "rgba(10,15,23,0.90)", backdropFilter: "blur(10px)",
             border: "1px solid rgba(95,227,255,0.35)",
             boxShadow: "0 4px 20px rgba(0,0,0,0.35), 0 0 16px rgba(95,227,255,0.08)",
@@ -439,7 +449,7 @@ export default function Home() {
                 onClick={() => setMode("planner")}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: "8px",
-                  padding: "7px 14px", borderRadius: "99px",
+                  padding: "7px 14px", borderRadius: "99px", minHeight: "44px",
                   background: "rgba(10,15,23,0.85)", backdropFilter: "blur(8px)",
                   border: "1px solid rgba(95,227,255,0.35)",
                   color: "var(--cyan)", fontSize: "12px", fontFamily: "var(--mono)",

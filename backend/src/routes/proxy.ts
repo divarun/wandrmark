@@ -217,7 +217,30 @@ function extractGridCacheKey(query: string): string | null {
   }
 }
 
+// Nominatim param allowlists — only forward known safe params to the upstream API.
+// This prevents clients from injecting format=xml (breaks JSON parse) or limit=1000
+// (bloats Redis). Params not in these sets are silently dropped.
+const NOMINATIM_SEARCH_PARAMS = new Set([
+  "q", "format", "limit", "addressdetails", "viewbox", "bounded",
+  "countrycodes", "accept-language", "namedetails", "extratags",
+  "dedupe", "polygon_geojson",
+]);
+const NOMINATIM_REVERSE_PARAMS = new Set([
+  "lat", "lon", "format", "zoom", "addressdetails",
+  "accept-language", "namedetails", "extratags", "polygon_geojson",
+]);
+
+function filterParams(query: Record<string, unknown>, allowed: Set<string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of allowed) {
+    if (typeof query[key] === "string") out[key] = query[key] as string;
+  }
+  return out;
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
+
+const OVERPASS_QUERY_MAX_LEN = 50_000;
 
 // POST /proxy/overpass
 router.post("/overpass", async (req: Request, res: Response) => {
@@ -225,6 +248,9 @@ router.post("/overpass", async (req: Request, res: Response) => {
     const { query } = req.body;
     if (!query || typeof query !== "string") {
       return res.status(400).json({ error: "Query string is required" });
+    }
+    if (query.length > OVERPASS_QUERY_MAX_LEN) {
+      return res.status(400).json({ error: `Query exceeds maximum length of ${OVERPASS_QUERY_MAX_LEN} characters` });
     }
 
     const fallbackHash = crypto.createHash("md5").update(query).digest("hex");
@@ -258,8 +284,18 @@ router.post("/overpass", async (req: Request, res: Response) => {
 // GET /proxy/nominatim/search
 router.get("/nominatim/search", async (req: Request, res: Response) => {
   try {
-    const paramsString = new URLSearchParams(req.query as Record<string, string>).toString();
-    const cacheKey = getCacheKey("nominatim", "search", paramsString);
+    const filtered = filterParams(req.query as Record<string, unknown>, NOMINATIM_SEARCH_PARAMS);
+    const paramsString = new URLSearchParams(filtered).toString();
+    // Exclude viewbox from the cache key — it shifts continuously as the map pans and
+    // would produce a unique key per viewport position, defeating cache sharing entirely.
+    // The viewbox is still forwarded to Nominatim as a ranking bias.
+    const cacheParams = new URLSearchParams(filtered);
+    cacheParams.delete("viewbox");
+    // bounded=1 restricts results to the viewbox area; since viewbox is excluded from
+    // the cache key, keeping bounded would store geography-restricted results under a
+    // viewbox-free key and serve them to callers that never requested bounded results.
+    cacheParams.delete("bounded");
+    const cacheKey = getCacheKey("nominatim", "search", cacheParams.toString());
     if (typeof req.query.q === "string") trackGeocodeSearch(req.query.q).catch(() => {});
 
     const result = await fetchWithCache(
@@ -287,13 +323,14 @@ router.get("/nominatim/search", async (req: Request, res: Response) => {
 // GET /proxy/nominatim/reverse
 router.get("/nominatim/reverse", async (req: Request, res: Response) => {
   try {
-    const paramsString = new URLSearchParams(req.query as Record<string, string>).toString();
+    const filtered = filterParams(req.query as Record<string, unknown>, NOMINATIM_REVERSE_PARAMS);
+    const paramsString = new URLSearchParams(filtered).toString();
     const cacheKey = getCacheKey("nominatim", "reverse", paramsString);
 
     const result = await fetchWithCache(
       cacheKey,
       {
-        url: `${NOMINATIM_URL}/reverse?${paramsString}`,
+        url: `${NOMINATIM_URL}/reverse?${paramsString}`,   // uses filtered params
         headers: { "User-Agent": "Wandrmark/1.0", Accept: "application/json" },
       },
       (d) => {

@@ -7,6 +7,12 @@ const NIM_MODEL = process.env.NIM_MODEL || "meta/llama-3.1-8b-instruct";
 const NIM_API_KEY = process.env.NVIDIA_API_KEY || "";
 const REQUEST_TIMEOUT_MS = Number(process.env.NIM_TIMEOUT_MS ?? 30000);
 
+// Strip control characters (incl. newlines) that could alter prompt structure,
+// then truncate to the caller's declared max length.
+function sanitizeInput(s: string, maxLen: number): string {
+  return s.replace(/[\x00-\x1F\x7F]/g, " ").trim().slice(0, maxLen);
+}
+
 interface NIMChatResponse {
   choices: {
     message: {
@@ -79,13 +85,14 @@ export async function generateRecommendations(
   mood?: string
 ): Promise<{ name: string; category: string; reason: string }[]> {
   const poiList = selectedPois
-    .map((p, i) => `${i + 1}. ${p.name} (${p.category}) — ${p.address}`)
+    .map((p, i) => `${i + 1}. ${sanitizeInput(p.name, 200)} (${sanitizeInput(p.category, 50)}) — ${sanitizeInput(p.address, 500)}`)
     .join("\n");
 
   const systemPrompt = `You are a knowledgeable local travel assistant. Given a list of places a traveler plans to visit, suggest 3-5 additional places they might enjoy. Return ONLY a valid JSON array with no extra text. Each object must have: "name" (string), "category" (one of: restaurant, cafe, attraction, park, museum), "reason" (short explanation string).`;
 
-  const moodLine = mood ? `\nThe traveler is feeling ${mood} today — tailor suggestions accordingly.` : "";
-  const prompt = `The traveler is visiting these places:\n${poiList}\n${userPreferences ? `\nPreferences: ${userPreferences}` : ""}${moodLine}\n\nSuggest 3-5 complementary places they would enjoy nearby. Return only the JSON array.`;
+  const moodLine = mood ? `\nThe traveler is feeling ${sanitizeInput(mood, 50)} today — tailor suggestions accordingly.` : "";
+  const userPref = userPreferences ? `\nPreferences: ${sanitizeInput(userPreferences, 500)}` : "";
+  const prompt = `The traveler is visiting these places:\n${poiList}\n${userPref}${moodLine}\n\nSuggest 3-5 complementary places they would enjoy nearby. Return only the JSON array.`;
 
   const raw = await nimGenerate(prompt, systemPrompt, "recommendations");
 
@@ -123,7 +130,7 @@ export async function generateTravelTips(poi: {
 }): Promise<{ description: string; tips: string[]; localInsights: string }> {
   const systemPrompt = `You are a local travel expert. Given a place name, category, and address, provide a short description, 2-4 practical travel tips, and a local insight. Return ONLY valid JSON with keys: "description" (string), "tips" (array of strings), "localInsights" (string). No extra text.`;
 
-  const prompt = `Place: ${poi.name}\nCategory: ${poi.category}\nAddress: ${poi.address}\n\nProvide travel info as JSON.`;
+  const prompt = `Place: ${sanitizeInput(poi.name, 200)}\nCategory: ${sanitizeInput(poi.category, 50)}\nAddress: ${sanitizeInput(poi.address, 500)}\n\nProvide travel info as JSON.`;
 
   const raw = await nimGenerate(prompt, systemPrompt, "travel-tips");
 
@@ -167,7 +174,7 @@ The fact should be:
 
 Focus on history, architecture, culture, famous residents, unique characteristics, or interesting trivia.`;
 
-  const prompt = `Generate a fascinating fact about the ${neighborhoodName} neighborhood in ${cityName}.
+  const prompt = `Generate a fascinating fact about the ${sanitizeInput(neighborhoodName, 100)} neighborhood in ${sanitizeInput(cityName, 100)}.
 Make it memorable and specific to this location.`;
 
   try {
@@ -201,7 +208,7 @@ export async function generateHistoricalContext(poi: {
 Provide a brief historical context (2-3 sentences) about a location, focusing on its origins,
 historical significance, or how it has evolved over time.`;
 
-  const prompt = `Provide historical context for: ${poi.name} (${poi.category}) located at ${poi.address}.`;
+  const prompt = `Provide historical context for: ${sanitizeInput(poi.name, 200)} (${sanitizeInput(poi.category, 50)}) located at ${sanitizeInput(poi.address, 500)}.`;
 
   try {
     const raw = await nimGenerate(prompt, systemPrompt, "historical-context");
@@ -231,7 +238,7 @@ function fallbackCityInsights(cityName: string): CityInsights {
 export async function generateCityInsights(cityName: string): Promise<CityInsights> {
   const systemPrompt = `You are an expert travel writer and historian. Given a city name, provide rich, engaging travel insights. Return ONLY valid JSON with no extra text. The JSON must have exactly these keys: "overview" (2-3 sentences about the city's character and significance), "highlights" (array of exactly 3-4 short strings, each naming a notable attraction or experience), "historicalFact" (1-2 sentences about an interesting historical event or fact specific to this city), "localTip" (1 sentence of insider advice for visitors).`;
 
-  const prompt = `Provide travel insights for: ${cityName}. Return only the JSON object.`;
+  const prompt = `Provide travel insights for: ${sanitizeInput(cityName, 100)}. Return only the JSON object.`;
 
   const raw = await nimGenerate(prompt, systemPrompt, "city-insights");
 
@@ -260,8 +267,8 @@ export async function generateCitySummary(
 encouraging summary of someone's exploration of a city. Keep it upbeat and motivating,
 2-3 sentences max.`;
 
-  const neighborhoods = neighborhoodsVisited.slice(0, 5).join(", ");
-  const prompt = `A traveler has visited ${poisVisited} places across ${neighborhoodsVisited.length} neighborhoods in ${cityName}, including ${neighborhoods}.
+  const neighborhoods = neighborhoodsVisited.slice(0, 5).map((n) => sanitizeInput(n, 100)).join(", ");
+  const prompt = `A traveler has visited ${poisVisited} places across ${neighborhoodsVisited.length} neighborhoods in ${sanitizeInput(cityName, 100)}, including ${neighborhoods}.
 Write a brief, encouraging summary of their exploration journey.`;
 
   try {

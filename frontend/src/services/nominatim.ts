@@ -110,9 +110,6 @@ export async function geocodeSearch(
       };
     });
 
-    // Sort by distance from current location when center is provided
-    if (center) results.sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
-
     return results;
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") return [];

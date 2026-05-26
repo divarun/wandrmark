@@ -7,7 +7,8 @@ import { checkAdminAuth } from "../middleware/adminAuth";
 
 const router = Router();
 
-router.get("/health", async (_req: Request, res: Response) => {
+router.get("/health", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req, res)) return;
   try {
     const healthy = await checkRedisHealth();
     if (healthy) {
@@ -19,11 +20,16 @@ router.get("/health", async (_req: Request, res: Response) => {
   }
 });
 
+const WARM_MODES = ["top", "all", "geocoding"] as const;
+
 router.post("/warm", async (req: Request, res: Response) => {
   if (!checkAdminAuth(req, res)) return;
 
   try {
     const { mode = "top", cities, skipExisting = false } = req.body;
+    if (!WARM_MODES.includes(mode)) {
+      return res.status(400).json({ error: `Invalid mode. Must be one of: ${WARM_MODES.join(", ")}` });
+    }
     const targetCities: string[] | undefined = Array.isArray(cities) ? cities : undefined;
 
     res.json({ status: "started", mode, message: "Cache warming started — check server logs." });
@@ -42,12 +48,17 @@ router.post("/warm", async (req: Request, res: Response) => {
   }
 });
 
+const CLEAR_PATTERNS = ["overpass", "nominatim", "ai"] as const;
+
 router.delete("/clear", async (req: Request, res: Response) => {
   if (!checkAdminAuth(req, res)) return;
 
   try {
     const { pattern } = req.query;
-    const key = pattern && typeof pattern === "string" ? `wandrmark:${pattern}:*` : "wandrmark:*";
+    if (pattern !== undefined && (typeof pattern !== "string" || !CLEAR_PATTERNS.includes(pattern as typeof CLEAR_PATTERNS[number]))) {
+      return res.status(400).json({ error: `Invalid pattern. Must be one of: ${CLEAR_PATTERNS.join(", ")}` });
+    }
+    const key = pattern ? `wandrmark:${pattern}:*` : "wandrmark:*";
     const count = await deleteCachePattern(key);
     res.json({ success: true, deletedCount: count });
   } catch (err) {
@@ -69,6 +80,9 @@ router.get("/usage", async (req: Request, res: Response) => {
 // GET /cache/usage/:ip — one IP's usage (requires warm secret)
 router.get("/usage/:ip", async (req: Request, res: Response) => {
   if (!checkAdminAuth(req, res)) return;
+  if (!/^[\d.:a-fA-F]+$/.test(req.params.ip)) {
+    return res.status(400).json({ error: "Invalid IP address" });
+  }
   try {
     const data = await getIpUsage(req.params.ip);
     res.json(data);
@@ -77,7 +91,8 @@ router.get("/usage/:ip", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/stats", async (_req: Request, res: Response) => {
+router.get("/stats", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req, res)) return;
   try {
     const { default: redis } = await import("../services/cache");
     const [overpass, nominatim, ai] = await Promise.all([

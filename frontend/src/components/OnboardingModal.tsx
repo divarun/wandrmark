@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const STORAGE_KEY = "wandrmark:onboarding_done";
 
@@ -49,11 +49,14 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
     onClose();
   };
 
+  const dismissRef = useRef(dismiss);
+  useEffect(() => { dismissRef.current = dismiss; });
+
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") dismiss(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") dismissRef.current(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const advance = () => (step < STEPS.length - 1 ? setStep((s) => s + 1) : dismiss());
 

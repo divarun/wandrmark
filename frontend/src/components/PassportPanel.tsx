@@ -5,8 +5,20 @@ import { Achievement, Quest, Stamp, MysteryBox } from "@/types/gamification";
 import { formatDistance, formatDuration } from "@/services/routing";
 import { feedbackApi } from "@/services/api";
 import { useFavorites } from "@/hooks/useFavorites";
+import { ACHIEVEMENT_LIBRARY } from "@/services/gamification";
 
-type TabId = "stats" | "stamps" | "quests" | "badges" | "favorites";
+type TabId = "stats" | "stamps" | "quests" | "badges" | "favorites" | "history";
+
+const MOOD_EMOJI: Record<string, string> = {
+  contemplative: "🤔",
+  energetic: "⚡",
+  creative: "🎨",
+  indulgent: "🍽️",
+  peaceful: "☮️",
+  social: "👥",
+  intellectual: "📚",
+  adventurous: "🏔️",
+};
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   {
@@ -33,6 +45,11 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
     id: "favorites",
     label: "Saved",
     icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
+  },
+  {
+    id: "history",
+    label: "History",
+    icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
   },
 ];
 
@@ -89,12 +106,12 @@ function getStats(statistics: { poisVisited: number; citiesVisited: number; ques
 }
 
 const LEVEL_PROGRESSION = [
-  { title: "Tourist",      xp: 0,    color: "#b196ff", emoji: "👤", levels: "Lv 1–4" },
-  { title: "Traveler",     xp: 100,  color: "#5cdb95", emoji: "🎒", levels: "Lv 5–9" },
-  { title: "Explorer",     xp: 300,  color: "#5fe3ff", emoji: "🧭", levels: "Lv 10–14" },
-  { title: "Local Guide",  xp: 600,  color: "#b196ff", emoji: "🗺️", levels: "Lv 15–19" },
-  { title: "City Expert",  xp: 1000, color: "#ffa14a", emoji: "⭐", levels: "Lv 20–24" },
-  { title: "Legend",       xp: 2000, color: "#ffd05a", emoji: "👑", levels: "Lv 25+" },
+  { title: "Tourist",      color: "#b196ff", emoji: "👤", levels: "Lv 1–4" },
+  { title: "Traveler",     color: "#5cdb95", emoji: "🎒", levels: "Lv 5–9" },
+  { title: "Explorer",     color: "#5fe3ff", emoji: "🧭", levels: "Lv 10–14" },
+  { title: "Local Guide",  color: "#b196ff", emoji: "🗺️", levels: "Lv 15–19" },
+  { title: "City Expert",  color: "#ffa14a", emoji: "⭐", levels: "Lv 20–24" },
+  { title: "Legend",       color: "#ffd05a", emoji: "👑", levels: "Lv 25+" },
 ];
 
 export default function PassportPanel() {
@@ -211,7 +228,7 @@ export default function PassportPanel() {
             aria-label="How it works"
             aria-expanded={showHelp}
             style={{
-              width: "28px", height: "28px", borderRadius: "8px", cursor: "pointer", flexShrink: 0,
+              width: "44px", height: "44px", borderRadius: "8px", cursor: "pointer", flexShrink: 0,
               border: `1px solid ${showHelp ? "rgba(177,150,255,0.4)" : "var(--line-2)"}`,
               background: showHelp ? "rgba(177,150,255,0.08)" : "rgba(255,255,255,0.03)",
               color: showHelp ? "var(--orchid)" : "var(--ink-3)",
@@ -257,7 +274,7 @@ export default function PassportPanel() {
               onClick={() => setShowHelp(false)}
               aria-label="Close help"
               style={{
-                width: "26px", height: "26px", borderRadius: "7px", cursor: "pointer",
+                width: "44px", height: "44px", borderRadius: "7px", cursor: "pointer",
                 border: "1px solid var(--line-2)", background: "rgba(255,255,255,0.03)",
                 color: "var(--ink-3)", display: "grid", placeItems: "center",
                 fontSize: "16px", lineHeight: 1, transition: "all 0.12s ease",
@@ -274,11 +291,10 @@ export default function PassportPanel() {
               <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Earning XP</p>
               <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
                 {[
-                  { label: "Visit a new place",        xp: "+10 XP", color: "#5fe3ff" },
-                  { label: "Discover a new city",       xp: "+25 XP", color: "#b196ff" },
-                  { label: "Complete a daily quest",    xp: "+50 XP", color: "#5cdb95" },
-                  { label: "Earn a neighborhood stamp", xp: "+30 XP", color: "#ffa14a" },
-                  { label: "Save a trip in Planner",    xp: "+15 XP", color: "#ff8fb7" },
+                  { label: "Visit a new place",    xp: "+8–75 XP",       color: "#5fe3ff" },
+                  { label: "Complete a quest",     xp: "+50–75 XP",      color: "#5cdb95" },
+                  { label: "Earn an achievement",  xp: "+10–2,500 XP",   color: "#b196ff" },
+                  { label: "Mystery box (×10 visits)", xp: "+5–150 XP",  color: "#ffa14a" },
                 ].map(({ label, xp, color }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line)" }}>
                     <span style={{ fontSize: "12px", color: "var(--ink-3)" }}>{label}</span>
@@ -324,22 +340,26 @@ export default function PassportPanel() {
 
             {/* Achievements */}
             <div>
-              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>Achievements</p>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>
+                Achievements ({ACHIEVEMENT_LIBRARY.length})
+              </p>
               <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                {[
-                  { emoji: "👣", name: "First Steps",    desc: "Visit 1 place",    xp: "+10" },
-                  { emoji: "🗺️", name: "Explorer Fifty", desc: "Visit 50 places",  xp: "+200" },
-                  { emoji: "💯", name: "Century Club",   desc: "Visit 100 places", xp: "+500" },
-                ].map(({ emoji, name, desc, xp }) => (
-                  <div key={name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line)" }}>
-                    <span style={{ fontSize: "15px", flexShrink: 0 }}>{emoji}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: "12px", color: "var(--ink-2)", fontWeight: 600 }}>{name}</p>
-                      <p style={{ fontSize: "11px", color: "var(--ink-5)", marginTop: "1px", fontFamily: "var(--mono)" }}>{desc}</p>
+                {ACHIEVEMENT_LIBRARY.map(({ iconEmoji, name, description, reward, tier }) => {
+                  const tierColor: Record<string, string> = { bronze: "#c97c3a", silver: "#9aa5b4", gold: "#ffd05a", platinum: "#5fe3ff" };
+                  return (
+                    <div key={name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--line)" }}>
+                      <span style={{ fontSize: "14px", flexShrink: 0 }}>{iconEmoji}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: "12px", color: "var(--ink-2)", fontWeight: 600 }}>{name}</p>
+                        <p style={{ fontSize: "10.5px", color: "var(--ink-5)", marginTop: "1px", fontFamily: "var(--mono)" }}>{description}</p>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "2px", flexShrink: 0 }}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", fontWeight: 600, color: "#5cdb95" }}>+{reward.xp} XP</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: "9px", color: tierColor[tier] ?? "var(--ink-5)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{tier}</span>
+                      </div>
                     </div>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color: "#5cdb95", flexShrink: 0 }}>{xp} XP</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -358,7 +378,7 @@ export default function PassportPanel() {
             <div>
               <p style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)", marginBottom: "8px" }}>XP & Titles</p>
               <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                {LEVEL_PROGRESSION.map(({ title, xp, color, emoji, levels }) => {
+                {LEVEL_PROGRESSION.map(({ title, color, emoji, levels }) => {
                   const isCurrent = level.title === title;
                   return (
                     <div key={title} style={{
@@ -369,10 +389,7 @@ export default function PassportPanel() {
                     }}>
                       <span style={{ fontSize: "13px", flexShrink: 0 }}>{emoji}</span>
                       <span style={{ flex: 1, fontSize: "12px", color: isCurrent ? "var(--ink)" : "var(--ink-4)", fontWeight: isCurrent ? 600 : 400 }}>{title}</span>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: "9.5px", color: "var(--ink-5)" }}>{levels}</span>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: isCurrent ? color : "var(--ink-5)", fontWeight: isCurrent ? 600 : 400, minWidth: "44px", textAlign: "right" }}>
-                        {xp === 0 ? "Start" : `${xp} XP`}
-                      </span>
+                      <span style={{ fontFamily: "var(--mono)", fontSize: "9.5px", color: isCurrent ? color : "var(--ink-5)", fontWeight: isCurrent ? 600 : 400 }}>{levels}</span>
                     </div>
                   );
                 })}
@@ -397,7 +414,7 @@ export default function PassportPanel() {
           {/* Tabs */}
           <div
             role="tablist"
-            style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}
+            style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}
             aria-label="Passport sections"
           >
             {TABS.map((tab) => {
@@ -461,7 +478,7 @@ export default function PassportPanel() {
                   </p>
                   {[
                     { icon: "📍", label: "Visit your first place", reward: "+10 XP", color: "var(--cyan)" },
-                    { icon: "🎫", label: "Earn a neighborhood stamp", reward: "+30 XP", color: "#ffa14a" },
+                    { icon: "🎫", label: "Earn a neighborhood stamp", reward: "+bonus XP", color: "#ffa14a" },
                     { icon: "🎯", label: "Complete a daily quest", reward: "+50 XP", color: "#5cdb95" },
                   ].map(({ icon, label, reward, color }) => (
                     <div key={label} style={{
@@ -520,25 +537,33 @@ export default function PassportPanel() {
                   </div>
                 )}
 
-                {/* Trip history quick view */}
+                {/* Trip history teaser — click to open History tab */}
                 {tripHistory.length > 0 && (
                   <div style={{ marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--line)" }}>
-                    <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)", marginBottom: "10px" }}>
-                      Trip History — {tripHistory.length} recorded
-                    </p>
-                    {tripHistory.slice(-3).reverse().map((trip) => (
-                      <div key={trip.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--line-2)", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "6px" }}>
-                        <div>
-                          <p style={{ color: "var(--ink)", fontWeight: 500, fontSize: "12.5px" }}>{trip.cityName}</p>
-                          <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", marginTop: "2px" }}>
-                            {formatDistance(trip.distance)} · {formatDuration(trip.duration)} · {trip.poisVisited.length} stops
+                    <button
+                      onClick={() => setActiveTab("history")}
+                      style={{
+                        appearance: "none", border: "1px solid var(--line-2)", borderRadius: "10px",
+                        background: "rgba(95,227,255,0.04)", padding: "10px 12px", cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+                        transition: "background 0.12s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "14px" }}>🗓️</span>
+                        <div style={{ textAlign: "left" }}>
+                          <p style={{ color: "var(--ink-2)", fontWeight: 600, fontSize: "12.5px" }}>
+                            {tripHistory.length} trip{tripHistory.length !== 1 ? "s" : ""} recorded
+                          </p>
+                          <p style={{ color: "var(--ink-5)", fontFamily: "var(--mono)", fontSize: "9.5px", marginTop: "1px" }}>
+                            Last: {tripHistory[0]?.cityName}
                           </p>
                         </div>
-                        <p style={{ color: "var(--ink-5)", fontFamily: "var(--mono)", fontSize: "9.5px", flexShrink: 0 }}>
-                          {new Date(trip.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                        </p>
                       </div>
-                    ))}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6"/>
+                      </svg>
+                    </button>
                   </div>
                 )}
               </>
@@ -664,7 +689,7 @@ export default function PassportPanel() {
                       <button
                         onClick={() => removeFavorite(poi.id)}
                         aria-label={`Remove ${poi.name} from saved places`}
-                        style={{ width: "28px", height: "28px", borderRadius: "7px", display: "grid", placeItems: "center", background: "rgba(255,107,111,0.08)", border: "1px solid rgba(255,107,111,0.22)", color: "var(--coral)", cursor: "pointer", fontSize: "12px", flexShrink: 0 }}
+                        style={{ width: "44px", height: "44px", borderRadius: "7px", display: "grid", placeItems: "center", background: "rgba(255,107,111,0.08)", border: "1px solid rgba(255,107,111,0.22)", color: "var(--coral)", cursor: "pointer", fontSize: "12px", flexShrink: 0 }}
                       >
                         ×
                       </button>
@@ -675,6 +700,81 @@ export default function PassportPanel() {
             )}
           </div>
         )}
+        {/* History */}
+        {activeTab === "history" && (
+          <div
+            id="panel-history"
+            role="tabpanel"
+            aria-labelledby="tab-history"
+            style={{ padding: "14px" }}
+          >
+            {tripHistory.length === 0 ? (
+              <EmptyState emoji="🗓️" title="No trips yet" subtitle="Save a route in Planner mode to record your first trip" />
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: "9.5px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-4)" }}>Recorded trips</p>
+                  <p style={{ color: "var(--cyan)", fontFamily: "var(--mono)", fontSize: "10px", fontWeight: 600 }}>{tripHistory.length}</p>
+                </div>
+                {tripHistory.map((trip) => {
+                  const moodEmoji = trip.mood ? MOOD_EMOJI[trip.mood] : null;
+                  return (
+                    <div key={trip.id} style={{ border: "1px solid var(--line-2)", borderRadius: "12px", padding: "12px", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: "8px", marginBottom: "6px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                          <div style={{ width: "28px", height: "28px", borderRadius: "8px", background: "rgba(95,227,255,0.10)", border: "1px solid rgba(95,227,255,0.25)", display: "grid", placeItems: "center", fontSize: "13px", flexShrink: 0 }}>
+                            {moodEmoji ?? "🗺️"}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13.5px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trip.cityName}</p>
+                            {trip.notes && (
+                              <p style={{ color: "var(--ink-4)", fontSize: "11px", marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{trip.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                        <p style={{ color: "var(--ink-5)", fontFamily: "var(--mono)", fontSize: "9.5px", flexShrink: 0, paddingTop: "2px" }}>
+                          {new Date(trip.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        {trip.poisVisited.length > 0 && (
+                          <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-4)", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: "5px", padding: "2px 7px" }}>
+                            {trip.poisVisited.length} stop{trip.poisVisited.length !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                        {trip.distance > 0 && (
+                          <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-4)", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: "5px", padding: "2px 7px" }}>
+                            {formatDistance(trip.distance)}
+                          </span>
+                        )}
+                        {trip.duration > 0 && (
+                          <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-4)", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: "5px", padding: "2px 7px" }}>
+                            {formatDuration(trip.duration)}
+                          </span>
+                        )}
+                        {trip.mood && (
+                          <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-4)", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: "5px", padding: "2px 7px", textTransform: "capitalize" }}>
+                            {trip.mood}
+                          </span>
+                        )}
+                      </div>
+                      {trip.questsCompleted.length > 0 && (
+                        <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--line)", display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                          {trip.questsCompleted.map((q) => (
+                            <span key={q.id} style={{ fontSize: "10px", color: "#5cdb95", background: "rgba(92,219,149,0.08)", border: "1px solid rgba(92,219,149,0.20)", borderRadius: "5px", padding: "2px 7px" }}>
+                              ✓ {q.title}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
+
       </div>
         </>
       )}
@@ -756,6 +856,7 @@ export default function PassportPanel() {
               border: starred ? "1px solid rgba(255, 208, 90, 0.4)" : "1px solid rgba(255, 208, 90, 0.2)",
               transition: "all 0.15s ease",
               flex: 1,
+              minHeight: "44px",
             }}
           >
             <svg
@@ -786,6 +887,7 @@ export default function PassportPanel() {
               border: bugOpen ? "1px solid rgba(255, 107, 111, 0.35)" : "1px solid rgba(255, 107, 111, 0.2)",
               transition: "all 0.12s ease",
               flex: 1, justifyContent: "center",
+              minHeight: "44px",
             }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -827,13 +929,13 @@ function StampCard({ stamp }: { stamp: Stamp }) {
     <div style={{ position: "relative", border: `1px solid ${accentBorder}`, borderRadius: "12px", background: accentBg, padding: "12px", overflow: "hidden", marginBottom: "10px" }}>
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "3px", background: `linear-gradient(180deg, ${accentColor}, transparent)` }} />
       <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: "10px", marginBottom: "6px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
           <div style={{ width: "24px", height: "24px", borderRadius: "7px", background: isLegendary ? "rgba(255,208,90,0.12)" : "rgba(255,255,255,0.04)", border: `1px solid ${accentColor}44`, display: "grid", placeItems: "center", color: accentColor, fontSize: "12px", flexShrink: 0 }}>
             {isLegendary ? "🌟" : isRare ? "✨" : "🎫"}
           </div>
-          <div>
-            <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13.5px" }}>{stamp.neighborhoodName}</p>
-            <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", letterSpacing: "0.02em", marginTop: "1px" }}>{stamp.cityName}</p>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13.5px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stamp.neighborhoodName}</p>
+            <p style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: "10px", letterSpacing: "0.02em", marginTop: "1px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stamp.cityName}</p>
           </div>
         </div>
         <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", padding: "4px 7px", borderRadius: "5px", background: isLegendary ? "rgba(255,208,90,0.12)" : "rgba(255,255,255,0.04)", color: accentColor, border: `1px solid ${accentColor}44`, flexShrink: 0 }}>
@@ -863,7 +965,7 @@ function QuestCard({ quest }: { quest: Quest }) {
   return (
     <div style={{ border: "1px solid var(--line-2)", borderRadius: "12px", padding: "12px", background: "linear-gradient(180deg, rgba(255,255,255,0.012), transparent)", marginBottom: "10px" }}>
       <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: "10px", marginBottom: "6px" }}>
-        <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13.5px" }}>{quest.title}</p>
+        <p style={{ color: "var(--ink)", fontWeight: 600, fontSize: "13.5px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{quest.title}</p>
         <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", padding: "4px 7px", borderRadius: "5px", background: diff.bg, color: diff.color, border: `1px solid ${diff.border}`, flexShrink: 0 }}>
           {quest.difficulty}
         </span>
@@ -926,6 +1028,7 @@ function MysteryBoxCard({ box, openedId, onOpen }: { box: MysteryBox; openedId: 
               border: `1px solid ${cfg.border}`,
               color: cfg.color, fontFamily: "var(--mono)", fontWeight: 600, fontSize: "10px",
               letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0,
+              minHeight: "44px", display: "flex", alignItems: "center",
               transition: "all 0.12s ease",
             }}
           >

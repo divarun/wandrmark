@@ -18,6 +18,14 @@ const bugLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const starLimiter = rateLimit({
+  windowMs: 60_000, // 1 minute
+  max: 10,
+  message: { error: "Too many requests. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const BugSchema = z.object({
   message: z.string().min(10).max(1000).trim(),
 });
@@ -48,7 +56,7 @@ router.get("/bugs", async (req: Request, res: Response) => {
 });
 
 // POST /feedback/star — open, toggles for current IP
-router.post("/star", async (req: Request, res: Response) => {
+router.post("/star", starLimiter, async (req: Request, res: Response) => {
   try {
     const result = await toggleStar(getClientIP(req));
     res.json(result);

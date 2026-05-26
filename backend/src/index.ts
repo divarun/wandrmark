@@ -133,11 +133,14 @@ app.get("/api/health", async (_req, res) => {
     environment: process.env.NODE_ENV || "development",
     services: {
       redis: redisHealth ? "connected" : "disconnected",
-      nim: {
-        baseUrl: process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1",
-        model: process.env.NIM_MODEL || "meta/llama-3.1-8b-instruct",
-        configured: !!process.env.NVIDIA_API_KEY,
-      },
+      // Omit NIM details in production to avoid leaking infrastructure topology.
+      nim: IS_PROD
+        ? { configured: !!process.env.NVIDIA_API_KEY }
+        : {
+            baseUrl: process.env.NIM_BASE_URL || "https://integrate.api.nvidia.com/v1",
+            model: process.env.NIM_MODEL || "meta/llama-3.1-8b-instruct",
+            configured: !!process.env.NVIDIA_API_KEY,
+          },
     },
   });
 });

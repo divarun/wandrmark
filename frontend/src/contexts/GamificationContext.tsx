@@ -30,7 +30,7 @@ interface GamificationContextValue {
   refresh: () => void;
   visitedPoiIds: Set<string>;
   openMysteryBox: (id: string) => void;
-  saveTripMemory: (data: TripMemoryInput) => void;
+  saveTripMemory: (data: TripMemoryInput) => Achievement[];
   tripHistory: TripMemory[];
 }
 
@@ -40,7 +40,7 @@ const GamificationContext = createContext<GamificationContextValue>({
   refresh: () => {},
   visitedPoiIds: new Set(),
   openMysteryBox: () => {},
-  saveTripMemory: () => {},
+  saveTripMemory: () => [],
   tripHistory: [],
 });
 
@@ -70,9 +70,11 @@ export function GamificationProvider({ children }: { children: React.ReactNode }
     setProgress(gamificationService.getProgress());
   }, []);
 
-  const saveTripMemory = useCallback((data: TripMemoryInput) => {
-    gamificationService.saveTripMemory(data);
+  const saveTripMemory = useCallback((data: TripMemoryInput): Achievement[] => {
+    const newAchievements = gamificationService.saveTripMemory(data);
+    setProgress(gamificationService.getProgress());
     setTripHistory(gamificationService.getTripHistory());
+    return newAchievements;
   }, []);
 
   return (

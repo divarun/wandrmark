@@ -23,7 +23,14 @@ export function isWhitelistedIP(req: Request): boolean {
  */
 export function checkAdminAuth(req: Request, res: Response): boolean {
   const secret = process.env.CACHE_WARM_SECRET;
-  if (!secret) return true; // dev mode — secret not configured
+  if (!secret) {
+    if (IS_PROD) {
+      console.error("❌ CACHE_WARM_SECRET is not set in production — admin routes are blocked until it is configured.");
+      res.status(401).json({ error: "Admin endpoints are unavailable — CACHE_WARM_SECRET is not configured on this server." });
+      return false;
+    }
+    return true; // dev mode only — secret not required locally
+  }
   if (isWhitelistedIP(req)) return true;
   const provided = req.headers["x-cache-secret"];
   if (typeof provided !== "string") {

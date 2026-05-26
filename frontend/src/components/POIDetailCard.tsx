@@ -5,6 +5,13 @@ import { CATEGORY_CONFIG } from "@/utils/constants";
 import { useFavorites } from "@/hooks/useFavorites";
 import { aiApi } from "@/services/api";
 
+function buildShareURL(poi: POI): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set("lat", poi.coordinates.lat.toFixed(5));
+  url.searchParams.set("lng", poi.coordinates.lng.toFixed(5));
+  return url.toString();
+}
+
 type AiTips = { description: string; tips: string[]; localInsights: string };
 const aiTipsCache = new Map<string, AiTips>();
 
@@ -20,10 +27,21 @@ export default function POIDetailCard({ poi, onClose, onAddToPlanner }: POIDetai
   const [aiTips, setAiTips] = useState<AiTips | null>(() => aiTipsCache.get(poi.id) ?? null);
   const [loadingTips, setLoadingTips] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const fav = isFavorite(poi.id);
 
   const toggleFav = () => {
     fav ? removeFavorite(poi.id) : addFavorite(poi);
+  };
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(buildShareURL(poi));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard not available — silently ignore
+    }
   };
 
   const fetchTips = async () => {
@@ -128,7 +146,7 @@ export default function POIDetailCard({ poi, onClose, onAddToPlanner }: POIDetai
           )}
 
           {/* Actions */}
-          <div className="grid grid-cols-2 gap-2.5 mb-5">
+          <div className="grid grid-cols-3 gap-2 mb-5">
             <button
               onClick={toggleFav}
               className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 ${
@@ -145,7 +163,30 @@ export default function POIDetailCard({ poi, onClose, onAddToPlanner }: POIDetai
               className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-ocean-600/[0.2] border border-ocean-600/[0.35] text-ocean-300 hover:text-white hover:bg-ocean-600/[0.35] text-sm font-semibold transition-all duration-200"
             >
               <span>+</span>
-              <span>Add to Plan</span>
+              <span>Plan</span>
+            </button>
+            <button
+              onClick={handleShare}
+              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 ${
+                copied
+                  ? "bg-emerald-500/[0.15] border-emerald-500/[0.35] text-emerald-400"
+                  : "bg-white/[0.05] border-white/[0.1] text-slate-300 hover:text-white hover:bg-white/[0.09]"
+              }`}
+            >
+              {copied ? (
+                <>
+                  <span>✓</span>
+                  <span>Copied</span>
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                  </svg>
+                  <span>Share</span>
+                </>
+              )}
             </button>
           </div>
 

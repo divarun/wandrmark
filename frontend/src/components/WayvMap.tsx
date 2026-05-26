@@ -13,6 +13,15 @@ if (typeof window !== "undefined") {
   require("leaflet.markercluster");
 }
 
+function makePoiIcon(poi: POI, isVisited: boolean): L.DivIcon {
+  return L.divIcon({
+    html: `<div class="poi-marker-dot ${poi.category}${isVisited ? " visited" : ""}" role="img" aria-label="${poi.name}"></div>`,
+    className: "",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
 interface WayvMapProps {
   pois: POI[];
   selectedPoi: POI | null;
@@ -46,7 +55,20 @@ function WayvMapInner({
   const routeLinesRef = useRef<L.Polyline[]>([]);
   const moveEndHandlerRef = useRef<boolean>(false);
 
-  // Init map once
+  // Stable refs so init effect can have empty deps — no risk of map destroy/recreate
+  const onMapMovedRef = useRef(onMapMoved);
+  useEffect(() => { onMapMovedRef.current = onMapMoved; });
+  const onPoiClickRef = useRef(onPoiClick);
+  useEffect(() => { onPoiClickRef.current = onPoiClick; });
+
+  // Registry of POI id → { marker, poi } so we can diff instead of clear-all-rebuild
+  const markerMapRef = useRef<Map<string, { marker: L.Marker; poi: POI }>>(new Map());
+  // Readable ref for visitedPoiIds so the pois-sync effect can read current state
+  // without taking it as a dep (it has its own dedicated effect below)
+  const visitedPoiIdsRef = useRef(visitedPoiIds);
+  useEffect(() => { visitedPoiIdsRef.current = visitedPoiIds; });
+
+  // Init map once — empty deps; onMapMoved and onPoiClick read through refs
   useEffect(() => {
     if (!containerRef.current || !L) return;
     if (mapRef.current) return;
@@ -73,7 +95,6 @@ function WayvMapInner({
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    // Marker cluster group for POIs — disable clustering at high zoom
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const clusterGroup = (L as any).markerClusterGroup({
       maxClusterRadius: 60,
@@ -98,20 +119,20 @@ function WayvMapInner({
     map.on("moveend", () => {
       if (moveEndHandlerRef.current) {
         const c = map.getCenter();
-        onMapMoved({ lat: c.lat, lng: c.lng });
+        onMapMovedRef.current({ lat: c.lat, lng: c.lng });
       }
     });
 
     mapRef.current = map;
-
     setTimeout(() => { moveEndHandlerRef.current = true; }, 500);
 
     return () => {
       map.remove();
       mapRef.current = null;
       clusterGroupRef.current = null;
+      markerMapRef.current.clear();
     };
-  }, [onMapMoved]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update center when prop changes
   useEffect(() => {
@@ -131,28 +152,42 @@ function WayvMapInner({
     }
   }, [center]);
 
-  // Render POI markers into cluster group
+  // Sync POI markers: diff additions/removals instead of clear-all-rebuild.
+  // visitedPoiIds is intentionally excluded — it has its own effect below.
   useEffect(() => {
     if (!clusterGroupRef.current || !L) return;
 
-    clusterGroupRef.current.clearLayers();
+    const markerMap = markerMapRef.current;
+    const incomingIds = new Set(pois.map((p) => p.id));
 
-    pois.forEach((poi) => {
-      const isVisited = visitedPoiIds?.has(poi.id) ?? false;
+    // Remove markers for POIs that are no longer in the list
+    for (const [id, { marker }] of markerMap) {
+      if (!incomingIds.has(id)) {
+        clusterGroupRef.current.removeLayer(marker);
+        markerMap.delete(id);
+      }
+    }
 
-      const icon = L.divIcon({
-        html: `<div class="poi-marker-dot ${poi.category}${isVisited ? " visited" : ""}" role="img" aria-label="${poi.name}"></div>`,
-        className: "",
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      });
-
-      const marker = L.marker([poi.coordinates.lat, poi.coordinates.lng], { icon })
-        .on("click", () => onPoiClick(poi));
-
+    // Add markers for newly visible POIs
+    for (const poi of pois) {
+      if (markerMap.has(poi.id)) continue;
+      const isVisited = visitedPoiIdsRef.current?.has(poi.id) ?? false;
+      const marker = L.marker([poi.coordinates.lat, poi.coordinates.lng], {
+        icon: makePoiIcon(poi, isVisited),
+      }).on("click", () => onPoiClickRef.current(poi));
       clusterGroupRef.current.addLayer(marker);
-    });
-  }, [pois, onPoiClick, visitedPoiIds]);
+      markerMap.set(poi.id, { marker, poi });
+    }
+  }, [pois]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update only visited-state icons — never recreates markers
+  useEffect(() => {
+    if (!L) return;
+    for (const [id, { marker, poi }] of markerMapRef.current) {
+      const isVisited = visitedPoiIds?.has(id) ?? false;
+      marker.setIcon(makePoiIcon(poi, isVisited));
+    }
+  }, [visitedPoiIds]);
 
   // Render planner markers (never clustered — always visible)
   useEffect(() => {
@@ -171,11 +206,11 @@ function WayvMapInner({
 
       const marker = L.marker([poi.coordinates.lat, poi.coordinates.lng], { icon })
         .addTo(mapRef.current!)
-        .on("click", () => onPoiClick(poi));
+        .on("click", () => onPoiClickRef.current(poi));
 
       plannerMarkersRef.current.push(marker);
     });
-  }, [plannerPois, onPoiClick]);
+  }, [plannerPois]);
 
   // Render route polylines
   useEffect(() => {

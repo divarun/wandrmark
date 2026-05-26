@@ -4,6 +4,7 @@ import { generateRecommendations, generateTravelTips, generateNeighborhoodFact, 
 import { getCache, setCache, CACHE_TTL, CacheKeys } from "../services/cache";
 import { getNimUsage } from "../services/nimUsage";
 import { trackCityInsight } from "../services/analytics";
+import { checkAdminAuth } from "../middleware/adminAuth";
 
 const router = Router();
 
@@ -221,7 +222,8 @@ router.post("/city-insights", async (req: Request, res: Response) => {
 });
 
 // GET /ai/usage
-router.get("/usage", async (_req: Request, res: Response) => {
+router.get("/usage", async (req: Request, res: Response) => {
+  if (!checkAdminAuth(req, res)) return;
   try {
     const stats = await getNimUsage();
     res.json(stats);

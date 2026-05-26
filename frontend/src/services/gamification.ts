@@ -34,10 +34,11 @@ const BASE_URL =
 ============================================ */
 
 export const ACHIEVEMENT_LIBRARY: Achievement[] = [
+  // ── POI milestones ───────────────────────────────────────
   {
     id: "first_steps",
     name: "First Steps",
-    description: "Visit your first POI",
+    description: "Visit your first place",
     category: "pois",
     iconEmoji: "👣",
     requirement: { type: "pois_visited", target: 1 },
@@ -45,9 +46,39 @@ export const ACHIEVEMENT_LIBRARY: Achievement[] = [
     tier: "bronze",
   },
   {
+    id: "explorer_five",
+    name: "Getting Warmed Up",
+    description: "Visit 5 places",
+    category: "pois",
+    iconEmoji: "🚶",
+    requirement: { type: "pois_visited", target: 5 },
+    reward: { xp: 25 },
+    tier: "bronze",
+  },
+  {
+    id: "explorer_ten",
+    name: "On the Move",
+    description: "Visit 10 places",
+    category: "pois",
+    iconEmoji: "🏃",
+    requirement: { type: "pois_visited", target: 10 },
+    reward: { xp: 50 },
+    tier: "bronze",
+  },
+  {
+    id: "explorer_twentyfive",
+    name: "Neighborhood Regular",
+    description: "Visit 25 places",
+    category: "pois",
+    iconEmoji: "🧭",
+    requirement: { type: "pois_visited", target: 25 },
+    reward: { xp: 100 },
+    tier: "silver",
+  },
+  {
     id: "explorer_fifty",
     name: "Explorer Fifty",
-    description: "Visit 50 POIs",
+    description: "Visit 50 places",
     category: "pois",
     iconEmoji: "🗺️",
     requirement: { type: "pois_visited", target: 50 },
@@ -57,12 +88,160 @@ export const ACHIEVEMENT_LIBRARY: Achievement[] = [
   {
     id: "century_club",
     name: "Century Club",
-    description: "Visit 100 POIs",
+    description: "Visit 100 places",
     category: "pois",
     iconEmoji: "💯",
     requirement: { type: "pois_visited", target: 100 },
     reward: { xp: 500 },
     tier: "gold",
+  },
+  {
+    id: "road_warrior",
+    name: "Road Warrior",
+    description: "Visit 200 places",
+    category: "pois",
+    iconEmoji: "🏆",
+    requirement: { type: "pois_visited", target: 200 },
+    reward: { xp: 1000 },
+    tier: "gold",
+  },
+  {
+    id: "legend_explorer",
+    name: "Living Legend",
+    description: "Visit 500 places",
+    category: "pois",
+    iconEmoji: "👑",
+    requirement: { type: "pois_visited", target: 500 },
+    reward: { xp: 2500 },
+    tier: "platinum",
+  },
+
+  // ── City milestones ──────────────────────────────────────
+  {
+    id: "city_hopper",
+    name: "City Hopper",
+    description: "Explore 3 different cities",
+    category: "pois",
+    iconEmoji: "✈️",
+    requirement: { type: "cities_visited", target: 3 },
+    reward: { xp: 75 },
+    tier: "bronze",
+  },
+  {
+    id: "globetrotter",
+    name: "Globetrotter",
+    description: "Explore 5 different cities",
+    category: "pois",
+    iconEmoji: "🌍",
+    requirement: { type: "cities_visited", target: 5 },
+    reward: { xp: 150 },
+    tier: "silver",
+  },
+  {
+    id: "world_traveler",
+    name: "World Traveler",
+    description: "Explore 10 different cities",
+    category: "pois",
+    iconEmoji: "🌐",
+    requirement: { type: "cities_visited", target: 10 },
+    reward: { xp: 400 },
+    tier: "gold",
+  },
+
+  // ── Quest milestones ─────────────────────────────────────
+  {
+    id: "quest_beginner",
+    name: "Quest Beginner",
+    description: "Complete 5 quests",
+    category: "pois",
+    iconEmoji: "🎯",
+    requirement: { type: "quests_completed", target: 5 },
+    reward: { xp: 50 },
+    tier: "bronze",
+  },
+  {
+    id: "quest_master",
+    name: "Quest Master",
+    description: "Complete 10 quests",
+    category: "pois",
+    iconEmoji: "⭐",
+    requirement: { type: "quests_completed", target: 10 },
+    reward: { xp: 150 },
+    tier: "silver",
+  },
+  {
+    id: "quest_legend",
+    name: "Quest Legend",
+    description: "Complete 25 quests",
+    category: "pois",
+    iconEmoji: "🌟",
+    requirement: { type: "quests_completed", target: 25 },
+    reward: { xp: 500 },
+    tier: "gold",
+  },
+
+  // ── Streak milestones ────────────────────────────────────
+  {
+    id: "streak_three",
+    name: "Habit Forming",
+    description: "Explore 3 days in a row",
+    category: "streak",
+    iconEmoji: "🔥",
+    requirement: { type: "streak_days", target: 3 },
+    reward: { xp: 30 },
+    tier: "bronze",
+  },
+  {
+    id: "streak_week",
+    name: "Week Wanderer",
+    description: "Explore 7 days in a row",
+    category: "streak",
+    iconEmoji: "📅",
+    requirement: { type: "streak_days", target: 7 },
+    reward: { xp: 100 },
+    tier: "silver",
+  },
+  {
+    id: "streak_fortnight",
+    name: "Dedicated Explorer",
+    description: "Explore 14 days in a row",
+    category: "streak",
+    iconEmoji: "💪",
+    requirement: { type: "streak_days", target: 14 },
+    reward: { xp: 250 },
+    tier: "gold",
+  },
+  {
+    id: "streak_month",
+    name: "Unstoppable",
+    description: "Explore 30 days in a row",
+    category: "streak",
+    iconEmoji: "⚡",
+    requirement: { type: "streak_days", target: 30 },
+    reward: { xp: 750 },
+    tier: "platinum",
+  },
+
+  // ── Route milestones ─────────────────────────────────────
+  {
+    id: "first_route",
+    name: "Route Planner",
+    description: "Save your first planned route",
+    category: "pois",
+    iconEmoji: "🗓️",
+    requirement: { type: "routes_completed", target: 1 },
+    reward: { xp: 50 },
+    tier: "bronze",
+  },
+  {
+    id: "five_routes",
+    name: "Master Planner",
+    description: "Save 5 planned routes",
+    category: "pois",
+    iconEmoji: "🗺️",
+    requirement: { type: "routes_completed", target: 5 },
+    reward: { xp: 200 },
+    tier: "silver",
   },
 ];
 
@@ -236,7 +415,7 @@ class GamificationService {
     duration: number;
     notes?: string;
     mood?: MoodType;
-  }): void {
+  }): Achievement[] {
     const memory: TripMemory = {
       id: `trip_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       date: new Date(),
@@ -254,7 +433,13 @@ class GamificationService {
     if (typeof window !== "undefined") {
       localStorage.setItem(STORAGE_KEY_TRIP_HISTORY, JSON.stringify(this.tripHistory));
     }
+
+    if (this.progress) {
+      this.progress.passport.statistics.routesCompleted++;
+    }
+    const newAchievements = this.checkAchievements();
     this.saveProgress();
+    return newAchievements;
   }
 
   /* ---------- COUNTRY DETECTION ---------- */
@@ -341,6 +526,7 @@ class GamificationService {
     xpGained: number;
     leveledUp: boolean;
     newLevel?: string;
+    newLevelNum?: number;
     achievements: Achievement[];
     mysteryBox?: MysteryBox;
     completedQuests: Quest[];
@@ -383,6 +569,8 @@ class GamificationService {
     let leveledUp = false;
     let newLevel: string | undefined;
 
+    let newLevelNum: number | undefined;
+
     if (newXP >= level.xpToNextLevel) {
       level.level++;
       level.xp = newXP - level.xpToNextLevel;
@@ -390,6 +578,7 @@ class GamificationService {
       level.title = this.getExplorerTitle(level.level) as ExplorerTitle;
       leveledUp = true;
       newLevel = level.title;
+      newLevelNum = level.level;
     } else {
       level.xp = newXP;
     }
@@ -408,7 +597,7 @@ class GamificationService {
 
     this.saveProgress();
 
-    return { isNew, xpGained, leveledUp, newLevel, achievements, mysteryBox, completedQuests };
+    return { isNew, xpGained, leveledUp, newLevel, newLevelNum, achievements, mysteryBox, completedQuests };
   }
 
   private ensureDailyQuests(cityName: string): void {
@@ -516,6 +705,18 @@ class GamificationService {
         case "pois_visited":
           met = stats.poisVisited >= achievement.requirement.target;
           break;
+        case "cities_visited":
+          met = stats.citiesVisited >= achievement.requirement.target;
+          break;
+        case "quests_completed":
+          met = stats.questsCompleted >= achievement.requirement.target;
+          break;
+        case "streak_days":
+          met = stats.longestStreak >= achievement.requirement.target;
+          break;
+        case "routes_completed":
+          met = stats.routesCompleted >= achievement.requirement.target;
+          break;
       }
 
       if (met) {
@@ -532,8 +733,10 @@ class GamificationService {
 
   private updateStreak(stats: { currentStreak: number; longestStreak: number; lastActiveDate: Date }): void {
     const now = new Date();
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const lastActive = new Date(stats.lastActiveDate);
-    const daysDiff = Math.floor((now.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24));
+    const lastStart = new Date(lastActive); lastStart.setHours(0, 0, 0, 0);
+    const daysDiff = Math.round((todayStart.getTime() - lastStart.getTime()) / 86400000);
 
     if (daysDiff === 1) {
       stats.currentStreak++;
@@ -541,7 +744,7 @@ class GamificationService {
     } else if (daysDiff > 1) {
       stats.currentStreak = 1;
     }
-    // daysDiff === 0: same day, no change to streak
+    // daysDiff === 0: same calendar day, no change to streak
 
     stats.lastActiveDate = now;
   }
@@ -584,7 +787,16 @@ class GamificationService {
 
   private loadProgress(): void {
     const stored = localStorage.getItem(STORAGE_KEY_PROGRESS);
-    this.progress = stored ? JSON.parse(stored) : this.createNewProgress();
+    if (!stored) {
+      this.progress = this.createNewProgress();
+      return;
+    }
+    this.progress = JSON.parse(stored, (_key, value) => {
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+        return new Date(value);
+      }
+      return value;
+    });
   }
 
   private createNewProgress(): UserProgress {
@@ -603,7 +815,7 @@ class GamificationService {
           longestRoute: 0,
           currentStreak: 0,
           longestStreak: 0,
-          lastActiveDate: new Date(),
+          lastActiveDate: new Date(0),
         },
         level: {
           level: 1,
@@ -635,7 +847,10 @@ class GamificationService {
 
   private loadTripHistory(): void {
     const stored = localStorage.getItem(STORAGE_KEY_TRIP_HISTORY);
-    if (stored) this.tripHistory = JSON.parse(stored);
+    if (stored) {
+      const parsed: TripMemory[] = JSON.parse(stored);
+      this.tripHistory = parsed.map(t => ({ ...t, date: new Date(t.date) }));
+    }
   }
 
   private saveProgress(): void {

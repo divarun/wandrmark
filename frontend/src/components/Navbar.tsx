@@ -70,7 +70,7 @@ export default function Navbar({
           style={{
             appearance: "none", border: 0, cursor: "pointer",
             display: "inline-flex", alignItems: "center", gap: "7px",
-            padding: "8px 14px", borderRadius: "7px",
+            padding: "8px 14px", borderRadius: "7px", minHeight: "44px",
             fontFamily: "var(--font)", fontWeight: 500, fontSize: "12.5px",
             letterSpacing: "-0.01em", transition: "all 0.12s ease",
             ...(explorerActive ? {
@@ -100,7 +100,7 @@ export default function Navbar({
           style={{
             appearance: "none", border: 0, cursor: "pointer",
             display: "inline-flex", alignItems: "center", gap: "7px",
-            padding: "8px 14px", borderRadius: "7px",
+            padding: "8px 14px", borderRadius: "7px", minHeight: "44px",
             fontFamily: "var(--font)", fontWeight: 500, fontSize: "12.5px",
             letterSpacing: "-0.01em", transition: "all 0.12s ease",
             ...(!explorerActive ? {

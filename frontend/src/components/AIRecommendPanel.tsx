@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { POI } from "@/types";
 import { MoodType } from "@/types/gamification";
 import { aiApi } from "@/services/api";
@@ -37,25 +37,36 @@ export default function AIRecommendPanel({ selectedPois, onAddToPlanner }: AIRec
   const [fetched, setFetched] = useState(false);
   const [addingIdx, setAddingIdx] = useState<number | null>(null);
   const [addErrors, setAddErrors] = useState<Record<number, string>>({});
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchRecommendations = useCallback(async () => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
     setLoading(true);
     setError(null);
     setFetched(true);
     setAddErrors({});
+    let didAbort = false;
     try {
       const input = selectedPois.map((p) => ({
         name: p.name,
         category: p.category,
         address: p.address,
       }));
-      const result = await aiApi.getRecommendations(input, preferences || undefined, mood ?? undefined);
+      const result = await aiApi.getRecommendations(input, preferences || undefined, mood ?? undefined, signal);
       setRecommendations(result.recommendations || []);
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        didAbort = true;
+        setFetched(false); // revert — no completed response; don't show empty state
+        return;
+      }
       setError(err instanceof Error ? err.message : "AI service is unavailable.");
       setRecommendations([]);
     } finally {
-      setLoading(false);
+      if (!didAbort) setLoading(false);
     }
   }, [selectedPois, preferences, mood]);
 
@@ -131,6 +142,7 @@ export default function AIRecommendPanel({ selectedPois, onAddToPlanner }: AIRec
           onChange={(e) => setPreferences(e.target.value)}
           placeholder="Preferences: budget-friendly, family-friendly, hidden gems…"
           rows={2}
+          maxLength={500}
           className="input-glass text-xs resize-none"
         />
 

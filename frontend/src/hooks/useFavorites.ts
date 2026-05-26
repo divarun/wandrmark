@@ -1,14 +1,13 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { SavedPOI, POI } from "@/types";
 import { localFavorites } from "@/services/localStorage";
 
 export function useFavorites() {
-  const [favorites, setFavorites] = useState<SavedPOI[]>([]);
-
-  useEffect(() => {
-    setFavorites(localFavorites.getAll());
-  }, []);
+  const [favorites, setFavorites] = useState<SavedPOI[]>(() => {
+    if (typeof window === "undefined") return [];
+    return localFavorites.getAll();
+  });
 
   const addFavorite = useCallback((poi: POI) => {
     const saved: SavedPOI = { ...poi, savedAt: Date.now() };

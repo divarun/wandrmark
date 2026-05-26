@@ -312,7 +312,7 @@
     border-radius: 18px 18px 0 0;
     transform: translateY(calc(100% - 260px));
     transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
-    z-index: 50;
+    z-index: 60;
     box-shadow: 0 -30px 60px rgba(0,0,0,0.55);
     backdrop-filter: blur(12px);
     background: linear-gradient(180deg, rgba(13,20,30,0.97), rgba(8,12,18,0.97));

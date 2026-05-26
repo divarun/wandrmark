@@ -1,5 +1,5 @@
 "use client";
-import { memo, useState, useEffect, useRef, useCallback, KeyboardEvent } from "react";
+import { memo, useState, useEffect, useRef, useCallback, useMemo, KeyboardEvent } from "react";
 import { POI, POICategory, LatLng } from "@/types";
 import { useFavorites } from "@/hooks/useFavorites";
 import { geocodeSearch } from "@/services/nominatim";
@@ -115,6 +115,14 @@ const CATEGORY_CONFIG: {
 
 const POI_ITEM_HEIGHT = 56; // px — keeps virtual positions accurate
 
+const POI_COLORS: Record<string, { color: string; bg: string; border: string }> = {
+  restaurant: { color: "#ff6b6f", bg: "rgba(255,107,111,0.07)", border: "rgba(255,107,111,0.22)" },
+  cafe:       { color: "#ffa14a", bg: "rgba(255,161,74,0.07)",  border: "rgba(255,161,74,0.22)"  },
+  attraction: { color: "#b196ff", bg: "rgba(177,150,255,0.07)", border: "rgba(177,150,255,0.22)" },
+  park:       { color: "#5cdb95", bg: "rgba(92,219,149,0.07)",  border: "rgba(92,219,149,0.22)"  },
+  museum:     { color: "#ff8fb7", bg: "rgba(255,143,183,0.07)", border: "rgba(255,143,183,0.22)" },
+};
+
 // Stamped at build/deploy time; formatted in UTC so it's unambiguous on any client
 const BUILD_LABEL = (() => {
   const raw = process.env.NEXT_PUBLIC_BUILD_TIME;
@@ -188,7 +196,7 @@ function ExplorerSidebarInner({
     setCityInsights(null);
     setInsightsLoading(true);
     setSlide(0);
-    aiApi.getCityInsights(insightCityName)
+    aiApi.getCityInsights(insightCityName, signal)
       .then((data) => { if (!signal.aborted) setCityInsights(data); })
       .catch(() => { if (!signal.aborted) setCityInsights(null); })
       .finally(() => { if (!signal.aborted) setInsightsLoading(false); });
@@ -255,9 +263,10 @@ function ExplorerSidebarInner({
     else if (e.key === "ArrowUp") { e.preventDefault(); setFocusedIdx((prev) => (prev <= 0 ? dropdownLen - 1 : prev - 1)); }
   };
 
-  const filteredPois = search.trim()
-    ? pois.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
-    : pois;
+  const filteredPois = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? pois.filter((p) => p.name.toLowerCase().includes(q)) : pois;
+  }, [pois, search]);
 
   const { containerRef: poiContainerRef, startIdx, endIdx, topPadding, bottomPadding } = useVirtualizer(
     filteredPois.length,
@@ -274,14 +283,6 @@ function ExplorerSidebarInner({
   const goTo = (idx: number) => {
     setSlideDir(idx > slide ? "right" : "left");
     setSlide(idx);
-  };
-
-  const POI_COLORS: Record<POICategory, { color: string; bg: string; border: string }> = {
-    restaurant: { color: "#ff6b6f", bg: "rgba(255,107,111,0.07)", border: "rgba(255,107,111,0.22)" },
-    cafe:       { color: "#ffa14a", bg: "rgba(255,161,74,0.07)",  border: "rgba(255,161,74,0.22)"  },
-    attraction: { color: "#b196ff", bg: "rgba(177,150,255,0.07)", border: "rgba(177,150,255,0.22)" },
-    park:       { color: "#5cdb95", bg: "rgba(92,219,149,0.07)",  border: "rgba(92,219,149,0.22)"  },
-    museum:     { color: "#ff8fb7", bg: "rgba(255,143,183,0.07)", border: "rgba(255,143,183,0.22)" },
   };
 
   return (
@@ -335,7 +336,7 @@ function ExplorerSidebarInner({
                   cursor: "pointer",
                   boxShadow: isActive ? `0 0 12px ${glow}` : "none",
                   transition: "all 0.12s ease",
-                  padding: "7px 4px",
+                  padding: "10px 4px",
                 }}
               >
                 {icon}
@@ -379,7 +380,7 @@ function ExplorerSidebarInner({
             disabled={searchLoading || !search.trim()}
             aria-label="Search"
             style={{
-              height: "36px", padding: "0 14px",
+              height: "44px", padding: "0 14px",
               background: "linear-gradient(180deg, rgba(95,227,255,0.18), rgba(95,227,255,0.06))",
               border: "1px solid rgba(95,227,255,0.35)",
               color: "var(--cyan)", fontFamily: "var(--mono)", fontWeight: 600, fontSize: "11px",
@@ -401,11 +402,11 @@ function ExplorerSidebarInner({
           <div style={{ marginTop: "8px", background: "var(--panel-2)", border: "1px solid var(--line-2)", borderRadius: "10px", overflow: "hidden" }}>
             <div style={{ padding: "6px 12px 4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontFamily: "var(--mono)", fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-5)" }}>Recent</span>
-              <button onMouseDown={() => { clearHistory(); setSearchHistory([]); setShowDropdown(false); }} style={{ fontSize: "10px", color: "var(--ink-4)", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}>Clear</button>
+              <button onMouseDown={() => { clearHistory(); setSearchHistory([]); setShowDropdown(false); }} style={{ fontSize: "10px", color: "var(--ink-4)", background: "none", border: "none", cursor: "pointer", padding: "0 4px", minHeight: "44px" }}>Clear</button>
             </div>
             {searchHistory.map((item, i) => (
               <button key={i} onMouseDown={() => selectHistoryItem(item)} className="w-full text-left"
-                style={{ padding: "8px 12px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: "8px", background: focusedIdx === i ? "rgba(255,255,255,0.04)" : "transparent", cursor: "pointer" }}>
+                style={{ padding: "0 12px", minHeight: "44px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: "8px", background: focusedIdx === i ? "rgba(255,255,255,0.04)" : "transparent", cursor: "pointer" }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                 </svg>
@@ -422,7 +423,7 @@ function ExplorerSidebarInner({
               const dist = formatDist(r.distanceKm);
               return (
                 <button key={i} onMouseDown={() => selectResult(r)} className="w-full text-left"
-                  style={{ padding: "10px 12px", borderBottom: i < searchResults.length - 1 ? "1px solid var(--line)" : "none", display: "flex", alignItems: "center", gap: "10px", background: focusedIdx === i ? "rgba(255,255,255,0.04)" : "transparent", cursor: "pointer" }}
+                  style={{ padding: "0 12px", minHeight: "44px", borderBottom: i < searchResults.length - 1 ? "1px solid var(--line)" : "none", display: "flex", alignItems: "center", gap: "10px", background: focusedIdx === i ? "rgba(255,255,255,0.04)" : "transparent", cursor: "pointer" }}
                   onMouseEnter={() => setFocusedIdx(i)} onMouseLeave={() => setFocusedIdx(-1)}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <circle cx="12" cy="10" r="3"/><path d="M12 22s-7-7-7-12a7 7 0 0 1 14 0c0 5-7 12-7 12Z"/>
@@ -468,14 +469,14 @@ function ExplorerSidebarInner({
               {!insightsLoading && slides.length > 0 && (
                 <>
                   <button onClick={() => goTo((slide - 1 + slides.length) % slides.length)} aria-label="Previous slide"
-                    style={{ width: "22px", height: "22px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "11px" }}>‹</button>
+                    style={{ minWidth: "44px", minHeight: "44px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "14px" }}>‹</button>
                   <span style={{ fontFamily: "var(--mono)", fontSize: "9px", color: "var(--ink-4)", minWidth: "20px", textAlign: "center" }} aria-live="polite">{slide + 1}/{slides.length}</span>
                   <button onClick={() => goTo((slide + 1) % slides.length)} aria-label="Next slide"
-                    style={{ width: "22px", height: "22px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "11px" }}>›</button>
+                    style={{ minWidth: "44px", minHeight: "44px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "14px" }}>›</button>
                 </>
               )}
               <button onClick={() => setInsightsCollapsed((c) => !c)} aria-label={insightsCollapsed ? "Expand" : "Collapse"}
-                style={{ width: "22px", height: "22px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "9px" }}>
+                style={{ minWidth: "44px", minHeight: "44px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "12px" }}>
                 {insightsCollapsed ? "▼" : "▲"}
               </button>
             </div>
@@ -522,8 +523,10 @@ function ExplorerSidebarInner({
               {!insightsLoading && slides.length > 0 && (
                 <div style={{ display: "flex", gap: "5px", justifyContent: "flex-start", padding: "0 14px 10px" }}>
                   {slides.map((s, i) => (
-                    <button key={s.key} onClick={() => goTo(i)}
-                      style={{ width: i === slide ? "18px" : "5px", height: "3px", borderRadius: "2px", background: i === slide ? slides[slide].color : "rgba(255,255,255,0.08)", border: "none", padding: 0, cursor: "pointer", transition: "all 0.25s ease" }} />
+                    <button key={s.key} onClick={() => goTo(i)} aria-label={`Go to slide ${i + 1}`}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: "24px", minHeight: "44px", background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                      <span style={{ display: "block", width: i === slide ? "18px" : "5px", height: "3px", borderRadius: "2px", background: i === slide ? slides[slide].color : "rgba(255,255,255,0.08)", transition: "all 0.25s ease", flexShrink: 0 }} />
+                    </button>
                   ))}
                 </div>
               )}

@@ -93,7 +93,7 @@ export default function AchievementToast() {
 
   return (
     <div
-      className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"
+      className="fixed top-20 left-1/2 -translate-x-1/2 z-[70] flex flex-col gap-2 pointer-events-none"
       role="status"
       aria-live="polite"
       aria-label="Notifications"

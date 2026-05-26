@@ -173,13 +173,13 @@ function PlannerSidebarInner({
                 <span style={{ fontSize: "11px", color: "var(--ink-3)", whiteSpace: "nowrap" }}>Clear all?</span>
                 <button
                   onClick={() => { onClear(); setConfirmingClear(false); }}
-                  style={{ padding: "4px 8px", borderRadius: "7px", background: "oklch(0.28 0.08 22 / 0.25)", border: "1px solid oklch(0.5 0.12 22 / 0.5)", color: "var(--coral)", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}
+                  style={{ padding: "0 12px", minHeight: "44px", display: "flex", alignItems: "center", borderRadius: "7px", background: "oklch(0.28 0.08 22 / 0.25)", border: "1px solid oklch(0.5 0.12 22 / 0.5)", color: "var(--coral)", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}
                 >
                   Yes
                 </button>
                 <button
                   onClick={() => setConfirmingClear(false)}
-                  style={{ padding: "4px 8px", borderRadius: "7px", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--ink-3)", fontSize: "11px", fontWeight: 500, cursor: "pointer" }}
+                  style={{ padding: "0 12px", minHeight: "44px", display: "flex", alignItems: "center", borderRadius: "7px", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--ink-3)", fontSize: "11px", fontWeight: 500, cursor: "pointer" }}
                 >
                   No
                 </button>
@@ -187,7 +187,7 @@ function PlannerSidebarInner({
             ) : (
               <button
                 onClick={() => setConfirmingClear(true)}
-                style={{ padding: "5px 10px", borderRadius: "8px", background: "oklch(0.28 0.08 22 / 0.2)", border: "1px solid oklch(0.5 0.12 22 / 0.4)", color: "var(--coral)", fontSize: "11px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+                style={{ padding: "0 12px", minHeight: "44px", display: "flex", alignItems: "center", borderRadius: "8px", background: "oklch(0.28 0.08 22 / 0.2)", border: "1px solid oklch(0.5 0.12 22 / 0.4)", color: "var(--coral)", fontSize: "11px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
               >
                 Clear
               </button>
@@ -224,7 +224,7 @@ function PlannerSidebarInner({
                 style={{
                   marginTop: "10px",
                   display: "inline-flex", alignItems: "center", gap: "6px",
-                  padding: "8px 16px", borderRadius: "99px",
+                  padding: "8px 16px", borderRadius: "99px", minHeight: "44px",
                   background: "linear-gradient(180deg, rgba(95,227,255,0.14), rgba(95,227,255,0.04))",
                   border: "1px solid rgba(95,227,255,0.35)",
                   color: "var(--cyan)", fontFamily: "var(--mono)", fontWeight: 600, fontSize: "11px",
@@ -268,9 +268,26 @@ function PlannerSidebarInner({
               </span>
             )}
 
+            <div className="flex items-center flex-shrink-0 sm:hidden">
+              <button
+                onClick={() => idx > 0 && onReorder(idx, idx - 1)}
+                disabled={idx === 0}
+                aria-label="Move stop up"
+                style={{ minWidth: "36px", minHeight: "44px", display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", color: idx === 0 ? "var(--ink-5)" : "var(--ink-3)", fontSize: "15px" }}
+              >↑</button>
+              <button
+                onClick={() => idx < plannerPois.length - 1 && onReorder(idx, idx + 1)}
+                disabled={idx === plannerPois.length - 1}
+                aria-label="Move stop down"
+                style={{ minWidth: "36px", minHeight: "44px", display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: idx === plannerPois.length - 1 ? "default" : "pointer", color: idx === plannerPois.length - 1 ? "var(--ink-5)" : "var(--ink-3)", fontSize: "15px" }}
+              >↓</button>
+            </div>
+
             <button
               onClick={() => onRemovePoi(poi.id)}
-              className="text-slate-600 hover:text-red-400 transition-colors p-0.5 rounded text-xs flex-shrink-0"
+              aria-label={`Remove ${poi.name}`}
+              className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0 flex items-center justify-center"
+              style={{ minWidth: "44px", minHeight: "44px" }}
             >
               ✕
             </button>
@@ -283,6 +300,7 @@ function PlannerSidebarInner({
             <button
               onClick={() => setShowSaved(s => !s)}
               className="flex items-center justify-between w-full text-left mb-2"
+              style={{ minHeight: "44px" }}
             >
               <span className="text-slate-500 text-[11px] font-semibold uppercase tracking-wide">
                 Saved Trips ({savedItineraries.length})
@@ -306,14 +324,16 @@ function PlannerSidebarInner({
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         onClick={() => exportItineraryJSON(it)}
-                        className="text-slate-600 hover:text-ocean-400 transition-colors text-[10px] px-1.5 py-0.5 rounded border border-white/[0.06] hover:border-ocean-500/30"
+                        className="text-slate-600 hover:text-ocean-400 transition-colors text-[10px] px-2 rounded border border-white/[0.06] hover:border-ocean-500/30 flex items-center"
+                        style={{ minHeight: "44px" }}
                         title="Export JSON"
                       >
                         JSON
                       </button>
                       <button
                         onClick={() => handleDeleteSaved(it.id)}
-                        className="text-slate-600 hover:text-red-400 transition-colors p-0.5 rounded text-xs"
+                        className="text-slate-600 hover:text-red-400 transition-colors rounded text-xs flex items-center justify-center"
+                        style={{ minWidth: "44px", minHeight: "44px" }}
                         title="Delete saved trip"
                       >
                         ✕
@@ -371,13 +391,13 @@ function PlannerSidebarInner({
               type="text"
               value={itineraryName}
               onChange={(e) => setItineraryName(e.target.value)}
-              className="input-glass py-1.5 text-xs"
+              className="input-glass py-1.5 text-xs min-h-[44px]"
               placeholder="Trip name…"
             />
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 onClick={handleSave}
-                className={`py-2 rounded-xl border text-[11px] font-semibold transition-all text-center ${
+                className={`min-h-[44px] flex items-center justify-center rounded-xl border text-[11px] font-semibold transition-all ${
                   justSaved
                     ? "bg-emerald-500/[0.15] border-emerald-500/[0.35] text-emerald-400"
                     : "bg-ocean-500/[0.12] border-ocean-500/[0.25] text-ocean-300 hover:bg-ocean-500/[0.2]"
@@ -387,7 +407,7 @@ function PlannerSidebarInner({
               </button>
               <button
                 onClick={handleCopyText}
-                className={`py-2 rounded-xl border text-[11px] font-semibold transition-all text-center ${
+                className={`min-h-[44px] flex items-center justify-center rounded-xl border text-[11px] font-semibold transition-all ${
                   copied
                     ? "bg-emerald-500/[0.15] border-emerald-500/[0.35] text-emerald-400"
                     : "bg-white/[0.05] border-white/[0.1] text-slate-300 hover:text-white hover:bg-white/[0.09]"
@@ -399,13 +419,13 @@ function PlannerSidebarInner({
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 onClick={() => exportItineraryJSON(buildItinerary())}
-                className="py-2 rounded-xl bg-white/[0.05] border border-white/[0.1] text-slate-300 hover:text-white hover:bg-white/[0.09] text-[11px] font-semibold transition-all text-center"
+                className="min-h-[44px] flex items-center justify-center rounded-xl bg-white/[0.05] border border-white/[0.1] text-slate-300 hover:text-white hover:bg-white/[0.09] text-[11px] font-semibold transition-all"
               >
                 Export JSON
               </button>
               <button
                 onClick={() => exportItineraryPDF(buildItinerary())}
-                className="py-2 rounded-xl bg-white/[0.05] border border-white/[0.1] text-slate-300 hover:text-white hover:bg-white/[0.09] text-[11px] font-semibold transition-all text-center"
+                className="min-h-[44px] flex items-center justify-center rounded-xl bg-white/[0.05] border border-white/[0.1] text-slate-300 hover:text-white hover:bg-white/[0.09] text-[11px] font-semibold transition-all"
               >
                 Export PDF
               </button>

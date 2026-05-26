@@ -53,7 +53,9 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          caches.open(STATIC_CACHE).then((c) => c.put(request, res.clone()));
+          event.waitUntil(
+            caches.open(STATIC_CACHE).then((c) => c.put(request, res.clone()))
+          );
           return res;
         })
         .catch(() =>
@@ -68,7 +70,9 @@ self.addEventListener("fetch", (event) => {
     fetch(request)
       .then((res) => {
         if (res.ok) {
-          caches.open(RUNTIME_CACHE).then((c) => c.put(request, res.clone()));
+          event.waitUntil(
+            caches.open(RUNTIME_CACHE).then((c) => c.put(request, res.clone()))
+          );
         }
         return res;
       })
