@@ -9,6 +9,7 @@ interface VisitResult {
   xpGained: number;
   leveledUp: boolean;
   newLevel?: string;
+  newLevelNum?: number;
   achievements: Achievement[];
   mysteryBox?: MysteryBox;
   completedQuests: Quest[];
