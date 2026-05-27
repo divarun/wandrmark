@@ -305,6 +305,7 @@ export default function Home() {
       onToggleCategory={toggleCategory}
       onSelectAllCategories={selectAllCategories}
       mapCenter={mapCenter}
+      onRequestSheetOpen={() => setLeftSheetOpen(true)}
     />
   ) : (
     <PlannerSidebar

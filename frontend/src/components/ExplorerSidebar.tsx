@@ -152,6 +152,7 @@ interface ExplorerSidebarProps {
   onToggleCategory: (cat: POICategory) => void;
   onSelectAllCategories: () => void;
   mapCenter?: LatLng;
+  onRequestSheetOpen?: () => void;
 }
 
 function ExplorerSidebarInner({
@@ -166,6 +167,7 @@ function ExplorerSidebarInner({
   onToggleCategory,
   onSelectAllCategories,
   mapCenter,
+  onRequestSheetOpen,
 }: ExplorerSidebarProps) {
   const [search, setSearch] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -195,6 +197,7 @@ function ExplorerSidebarInner({
     const { signal } = insightAbort.current;
     setCityInsights(null);
     setInsightsLoading(true);
+    setInsightsCollapsed(true); // always start collapsed so POI list is accessible in peek state
     setSlide(0);
     aiApi.getCityInsights(insightCityName, signal)
       .then((data) => { if (!signal.aborted) setCityInsights(data); })
@@ -475,7 +478,7 @@ function ExplorerSidebarInner({
                     style={{ minWidth: "44px", minHeight: "44px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "14px" }}>›</button>
                 </>
               )}
-              <button onClick={() => setInsightsCollapsed((c) => !c)} aria-label={insightsCollapsed ? "Expand" : "Collapse"}
+              <button onClick={() => { if (insightsCollapsed) onRequestSheetOpen?.(); setInsightsCollapsed((c) => !c); }} aria-label={insightsCollapsed ? "Expand" : "Collapse"}
                 style={{ minWidth: "44px", minHeight: "44px", borderRadius: "6px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line-2)", color: "var(--ink-3)", cursor: "pointer", fontSize: "12px" }}>
                 {insightsCollapsed ? "▼" : "▲"}
               </button>
